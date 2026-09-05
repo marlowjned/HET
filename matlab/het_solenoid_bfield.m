@@ -44,8 +44,9 @@ nSeedR = 3;             % radial seed points across the channel gap
 nSeedTheta = 12;        % azimuthal seed points
 
 %% 2. DERIVED GEOMETRY (meters)
-OD_opening = geom.OD_opening_in * in2m;
-ID_opening = geom.ID_opening_in * in2m;
+OD_opening    = geom.OD_opening_in * in2m;
+ID_opening    = geom.ID_opening_in * in2m;
+depth_opening = geom.depth_opening_in * in2m;
 
 centerCoil.OD     = centerCoil.OD_in * in2m;
 centerCoil.ID     = centerCoil.ID_in * in2m;
@@ -215,6 +216,12 @@ hold off;
 fprintf('Done. Inspect the geometry-check figure first to confirm coil placement,\n');
 fprintf('then the |B| and field-line figures.\n');
 
+%% 7. INTERACTIVE CROSS-SECTION VIEWER
+% Slider sweeps the azimuthal cut angle theta (0-180 deg); r spans
+% [-gridExtentR, gridExtentR] so both half-planes (theta and theta+180)
+% show at once. Shows |B| contour + in-plane (Br,Bz) quiver on that cut.
+launchCrossSectionViewer(R, gridExtentR, gridExtentZ, ID_opening, OD_opening, depth_opening);
+
 %% LOCAL FUNCTIONS
 function f = windingCurrent(region, ~, x0, y0, Jmag)
 % Azimuthal current density about local axis (x0,y0); sign(Jmag) sets polarity
@@ -234,4 +241,76 @@ for i = 1:numel(verts)
     surface([x; x], [y; y], [z; z], [c; c], ...
         FaceColor="none", EdgeColor="interp", LineWidth=1.5);
 end
+end
+
+function launchCrossSectionViewer(R, Rmax, Zmax, ID_opening, OD_opening, depth_opening)
+nR = 50; nZ = 36; % kept modest so each redraw (release-triggered) stays snappy
+rg = linspace(-Rmax, Rmax, nR);
+zg = linspace(-Zmax, Zmax, nZ);
+[Rg, Zg] = meshgrid(rg, zg);
+
+fig = uifigure('Name', 'HET B-field cross-section viewer', 'Position', [100 100 900 650]);
+ax = uiaxes(fig, 'Position', [60 130 780 480]);
+lbl = uilabel(fig, 'Position', [800 110 100 22], 'Text', '0 / 180 deg');
+uilabel(fig, 'Position', [60 60 780 22], 'Text', 'Cross-section angle theta');
+sld = uislider(fig, 'Position', [80 80 700 3], 'Limits', [0 180], ...
+    'Value', 0, 'MajorTicks', 0:30:180);
+
+channel.ID = ID_opening;
+channel.OD = OD_opening;
+channel.depth = depth_opening;
+
+updateCrossSectionPlot(ax, R, Rg, Zg, 0, channel);
+% Recompute on release (not during drag), since each redraw queries the FEM
+% solution directly via interpolateMagneticFlux. lbl flips to "Computing..."
+% with a forced drawnow so the delay doesn't look like a stuck UI.
+sld.ValueChangedFcn = @(src, ~) onCrossSectionSliderChange(src, ax, R, Rg, Zg, lbl, channel);
+end
+
+function onCrossSectionSliderChange(src, ax, R, Rg, Zg, lbl, channel)
+lbl.Text = 'Computing...';
+drawnow;
+thetaDeg = src.Value;
+updateCrossSectionPlot(ax, R, Rg, Zg, thetaDeg, channel);
+lbl.Text = sprintf('%.0f / %.0f deg', thetaDeg, thetaDeg + 180);
+end
+
+function updateCrossSectionPlot(ax, R, Rg, Zg, thetaDeg, channel)
+theta = deg2rad(thetaDeg);
+X = Rg * cos(theta);
+Y = Rg * sin(theta);
+Z = Zg;
+
+BI = R.interpolateMagneticFlux(X, Y, Z);
+Bx = reshape(BI.Bx, size(Rg));
+By = reshape(BI.By, size(Rg));
+Bz = reshape(BI.Bz, size(Rg));
+Br = Bx*cos(theta) + By*sin(theta); % in-plane radial component of this cut
+Bmag = sqrt(Bx.^2 + By.^2 + Bz.^2);
+
+cla(ax);
+contourf(ax, Rg, Zg, Bmag, 30, LineStyle="none");
+hold(ax, 'on');
+colormap(ax, 'parula');
+cb = colorbar(ax); cb.Label.String = '|B| (T)';
+
+skip = max(1, floor(size(Rg, 1)/20));
+quiver(ax, Rg(1:skip:end, 1:skip:end), Zg(1:skip:end, 1:skip:end), ...
+    Br(1:skip:end, 1:skip:end), Bz(1:skip:end, 1:skip:end), 'k');
+
+% Channel outline: annulus [ID/2, OD/2] x [-depth/2, depth/2] on both
+% half-planes of this cut (channel is assumed centered on z = 0, same as
+% the coils)
+rectangle(ax, Position=[channel.ID/2, -channel.depth/2, ...
+    (channel.OD - channel.ID)/2, channel.depth], ...
+    EdgeColor="w", LineStyle="--", LineWidth=1.5);
+rectangle(ax, Position=[-channel.OD/2, -channel.depth/2, ...
+    (channel.OD - channel.ID)/2, channel.depth], ...
+    EdgeColor="w", LineStyle="--", LineWidth=1.5);
+
+xlabel(ax, 'r (m)  [negative r = opposite half-plane]');
+ylabel(ax, 'z (m)');
+title(ax, sprintf('B field cross-section at theta = %.0f / %.0f deg', thetaDeg, thetaDeg + 180));
+axis(ax, 'equal');
+hold(ax, 'off');
 end
