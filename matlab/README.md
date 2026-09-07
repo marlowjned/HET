@@ -10,9 +10,11 @@ PDE Toolbox.
 - **Parametric solenoid model**: working (`het_solenoid_bfield.m`).
 - **Real CAD geometry import**: working — see `new_export/`.
 - **Material assignment**: not yet wired into a solve. Materials are
-  known (see below), and the multi-domain classification pipeline that
-  assigns them is prototyped and working (`new_export/scratch_classify.m`)
-  but not yet connected to an actual `femodel` solve — see "Next step".
+  known (see below); the multi-domain classification pipeline that
+  assigns them is prototyped in `new_export/scratch_classify.m`, but its
+  first step (a clean `union` of iron + chamber + injector) hit a real
+  geometry-kernel limitation and the plan is being revised — see
+  "Next step".
 
 ## Files
 
@@ -52,14 +54,21 @@ The current, working import of the actual BPL-700 assembly from Onshape:
   overlap (via `addCell` probing). Useful after any re-export to confirm
   the geometry still looks like a sane assembly.
 - `scratch_center_gap.m` — one-off profiling of the chamber's radial bore
-  vs. axial position in the center-pole's local frame. Used to confirm
-  the center pole is stepped (thin shaft, thick only near the chamber)
-  before sizing a winding around it.
+  vs. axial position in the center-pole's local frame. Confirmed the
+  center pole is stepped: it's only "flush" against the chamber over the
+  last ~11mm of its length (pole radius steps from 15.9mm to 30.8mm right
+  there); across the other ~100mm the chamber's own bore stays at a
+  constant ~30.6mm radius, leaving a genuine ~15mm annular gap around the
+  thin pole section. That gap is the center winding's natural home — the
+  chamber bore itself defines the winding OD, no invented wall thickness
+  needed.
 - `scratch_windings.m` — builds a hollow cylindrical winding-sleeve solid
   for each of the 5 poles (center + 4 outer), sized to fit the real
-  clearance gap without touching iron/chamber/injector, and verifies no
-  winding-to-structure or winding-to-winding collisions. Writes
-  `windings.mat`.
+  clearance gap without touching iron/chamber/injector (the center one
+  sized specifically to the thin-section gap found by
+  `scratch_center_gap.m`), and verifies no winding-to-structure or
+  winding-to-winding collisions. Geometry stage confirmed complete: all 5
+  windings float freely with zero collisions. Writes `windings.mat`.
 - `windings.mat` — output of `scratch_windings.m`: the 5 winding-sleeve
   `fegeometry` solids plus their labels/rotation/translation.
 - `scratch_isolate_mesh.m`, `scratch_keepbound.m` — one-off checks that
@@ -116,8 +125,8 @@ data — so it must not be used for the iron parts.
 `addCell` (used by `check_placed.m` to probe contacts) only supports
 nesting one solid strictly inside another — it cannot build a geometry
 where two solids share a real conformal boundary, which is what a
-correctly-mated assembly needs. The approach, now prototyped end-to-end
-in `new_export/scratch_classify.m` (see above):
+correctly-mated assembly needs. The original approach, prototyped
+end-to-end in `new_export/scratch_classify.m` (see above):
 
 1. `union` the iron + chamber + injector parts into one solid "structure
    blob" (union tolerates touching/overlapping solids; validated
@@ -130,15 +139,44 @@ in `new_export/scratch_classify.m` (see above):
 4. For each element of the structure-blob cell, classify which original
    part (iron / chamber / injector) it falls inside via `findCell`
    (vectorized point-in-solid test), with a nearest-solid distance
-   fallback for elements `findCell` can't place directly. Working in
-   `scratch_classify.m`.
+   fallback for elements `findCell` can't place directly.
 5. Rebuild via `fegeometry(mesh, ElementIDToRegionID)` — MATLAB's
    sanctioned mechanism for a multi-material geometry with real shared
    (conformal) boundaries (`pde/DMultidomainFegeometryObjectExample`) —
    and wire the result into a `femodel` magnetostatic solve with real
    per-region `RelativePermeability` and winding `cellLoad` currents.
-   **Not done yet**: `scratch_classify.m` proves the classification
-   works but stops short of steps 5+solve.
+
+### Blocker hit at step 1: `union` isn't clean across every interface
+
+Isolating the failure (per-part-count meshability checks in
+`scratch_isolate_mesh.m`) found that `union`-ing the 8 iron parts
+together works perfectly: 73 faces, meshes fine, ~103k elements. But the
+moment `chamber` (16 faces on its own) gets unioned into that iron blob,
+the result jumps to 234 faces and fails to mesh across every
+`Hmax`/`Hmin` combination tried — not a resolution problem, a geometry-
+quality one. The likely cause: chamber's mating surface is near-but-not-
+exactly coincident with the iron's, so the boolean kernel produces a pile
+of degenerate sliver faces instead of one clean shared boundary, rather
+than failing outright. (Also worth noting: `union` for `fegeometry` is a
+brand-new MATLAB feature, introduced in R2025a.)
+
+This matters because the whole mesh-once-then-`findCell`-classify plan
+above depended on that union being clean. It isn't, at least for the
+iron/chamber interface.
+
+**Proposed fix (decision pending as of this writing):** since chamber and
+injector are magnetically inert (relative permeability ≈ 1, same as air)
+and their touching interface with the iron only matters geometrically —
+not electromagnetically — for this solve, give chamber and injector a
+small clearance gap from the iron (and from each other) via an
+inflate-and-subtract, rather than a zero-gap union. The iron itself stays
+one true zero-gap union (needed for flux continuity across it). This also
+simplifies the pipeline: every region becomes its own natively separate
+`addCell`'d cell (like the windings already are), making the
+mesh-once-then-`findCell`-reclassify step (steps 3-5 above) unnecessary
+entirely. The alternative not yet tried: re-tessellating/simplifying
+chamber's mating face before the union, to see if a clean conformal union
+is achievable after all.
 
 ## Gotchas encountered (for future re-exports)
 
@@ -159,6 +197,12 @@ in `new_export/scratch_classify.m` (see above):
 - `pdegplot` silently resets `hold` to `off` after every call — re-assert
   `hold on` before each subsequent plot/legend call in a multi-part
   figure or later parts silently wipe out earlier ones.
+- `union` for `fegeometry` (new in R2025a) can silently produce
+  degenerate sliver faces instead of a clean shared boundary when two
+  solids' mating surfaces are near-but-not-exactly coincident — it
+  doesn't error, but the result then fails to mesh at any `Hmax`/`Hmin`.
+  Symptom to watch for: a disproportionate face-count jump after adding
+  one part to a union (see "Blocker hit at step 1" below).
 
 ## Future features / things to consider
 
