@@ -10,7 +10,7 @@
 
 clear; close all; clc;
 
-stepFile = fullfile(fileparts(mfilename('fullpath')), 'BPL-700-Assembly-SIMS.step');
+stepFile = fullfile(fileparts(mfilename('fullpath')), 'BPL-700-part-chamber.step');
 airDomainFactor = 6; % air sphere radius = this x max distance from assembly centroid
 
 %% Import + recenter
