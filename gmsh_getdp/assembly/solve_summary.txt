@@ -1,0 +1,12 @@
+BPL-700 real-CAD magnetostatics solve summary
+(linear mur_iron=1000 placeholder, no B-H saturation curve)
+
+Iron elements: 84103
+  max |B|    = 9.6713 T
+  mean |B|   = 2.2734 T
+  median |B| = 2.6652 T
+  p90 |B|    = 3.7718 T
+  p99 |B|    = 5.9178 T
+
+Overall (iron+air+windings) elements: 402282
+  max |B| = 9.6713 T

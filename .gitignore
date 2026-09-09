@@ -1,0 +1,14 @@
+tools/
+gmsh_getdp/**/*.msh
+gmsh_getdp/**/*.pos
+gmsh_getdp/**/*.brep
+gmsh_getdp/**/*.step
+gmsh_getdp/**/*.log
+gmsh_getdp/**/run*.log
+gmsh_getdp/**/*.vtu
+gmsh_getdp/**/*.vtk
+gmsh_getdp/**/*.npy
+gmsh_getdp/**/*.pre
+gmsh_getdp/**/*.res
+gmsh_getdp/**/*.npz
+gmsh_getdp/**/__pycache__/
