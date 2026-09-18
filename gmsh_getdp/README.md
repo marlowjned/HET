@@ -196,6 +196,35 @@ that constraint, power grows with the square of current on whichever
 coil's current changes (e.g. `I_center` swept from 2-12.5 A above swings
 center-coil power alone from ~0.9 W to ~35-46 W at fixed `I_outer = 5A`).
 
+## Whole-assembly STEP import (spike, not yet in the build pipeline)
+
+`assembly/scratch_whole_assembly_import.py` validates a simpler alternative
+to the current per-part-STEP-export + hardcoded-placement-table pipeline
+(`build_assembly.py`'s `TRANSFORMS`, ported from
+`matlab/new_export/apply_transforms.m`): importing the **whole-assembly**
+STEP directly. Findings, relevant to any future parametric/sweep pipeline:
+
+- Gmsh/OCC recovers Onshape's own real per-occurrence placement exactly
+  (verified against `apply_transforms.m`'s table) and preserves part names
+  as entity labels -- no manual per-file transform bookkeeping needed.
+- Fusing all 7 iron parts in **one batch call** (as `build_assembly.py`
+  does today) only produced 3 disjoint solids on this file, not 1 --
+  OCC's fuzzy boolean union is order/grouping-dependent (same non-symmetry
+  already noted in `../matlab/README.md` for MATLAB's kernel). Fusing
+  **incrementally** (one part folded into the growing result at a time)
+  gave the correct single solid (73 boundary faces, meshes cleanly).
+- The usual mm-labeled-as-m unit bug is present in this STEP too, but
+  fixing it via `occ.dilate()` on solids pulled from an *assembly*-
+  structured STEP is unreliable (produces small, part-specific placement
+  drift -- see the script's docstring for the suspected cause). Didn't
+  break this particular result, but shouldn't be trusted going forward.
+  The real fix: have any future parametrized Onshape export emit correct
+  real-world units directly, rather than relying on a post-import scale
+  correction.
+
+Not wired into `build_assembly.py` yet -- kept as a validated reference
+for whichever CAD pipeline design gets built next.
+
 ## Known limitations / next steps
 
 - **Linear iron, no saturation.** `mur_iron = 1000` is a reasonable

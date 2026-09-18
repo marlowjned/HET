@@ -1,4 +1,7 @@
 tools/
+.env
+onshape/cad_cache/
+__pycache__/
 gmsh_getdp/**/*.msh
 gmsh_getdp/**/*.pos
 gmsh_getdp/**/*.brep

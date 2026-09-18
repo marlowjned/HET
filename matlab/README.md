@@ -9,14 +9,22 @@ PDE Toolbox.
 
 - **Parametric solenoid model**: working (`het_solenoid_bfield.m`).
 - **Real CAD geometry import**: working — see `new_export/`.
-- **Material assignment**: not yet wired into a solve. Materials are
-  known (see below); the multi-domain classification pipeline that
+- **Material assignment**: not yet wired into a MATLAB solve. Materials
+  are known (see below); the multi-domain classification pipeline that
   assigns them is prototyped in `new_export/scratch_classify.m`, but its
   first step (a clean `union` of iron + chamber + injector) hit a real
   geometry-kernel limitation. Re-diagnosed in detail since this was first
   written: it's not one bad interface, it's 5 of the assembly's 9 real
   touching interfaces (see "Blocker hit at step 1" under "Next step"),
   and the plan is being revised.
+- **A second, independent pipeline outside MATLAB now exists and is
+  further along**: `../gmsh_getdp/` (Gmsh for geometry/meshing, GetDP for
+  the FEM solve — both compiled, not Python) fuses all 7 real iron parts
+  cleanly on the first try (vs. MATLAB's 4/9 clean interfaces) and has a
+  working, validated (1.4% vs. an exact analytic check) magnetostatic
+  solve on the real assembly, including reasonable placeholder materials
+  and winding currents. See `../gmsh_getdp/README.md` for status and
+  caveats (still linear iron, no B-H saturation curve — same gap as here).
 
 ## Files
 
