@@ -4,19 +4,40 @@ generate_regions.py
 Standalone re-generation of assembly_regions_generated.pro for an arbitrary
 winding excitation (turns/current/polarity per pole type), WITHOUT
 re-running the expensive geometry+meshing step in build_assembly.py. Reads
-winding geometry (pole type, A_cross, loc, zdir) from assembly_params.txt,
-which build_assembly.py already writes once per mesh.
+winding geometry (pole type, A_cross, loc) from assembly_params.txt, which
+build_assembly.py already writes once per mesh.
 
-This is exactly the same Group/Function-block generation as the tail of
-build_assembly.py ("Generate the GetDP region/current-source include
-file"), just parameterized on an `excitation` dict instead of the
-hardcoded EXCITATION constant, and sourced from the params file instead of
-in-memory winding_tags/pole_occurrences. magnetostatics_assembly.pro is
-untouched -- it just `Include`s whatever this writes.
+This is the SOLE generator of the Group/Function block now -- build_assembly.py
+used to duplicate this same generation inline, but that got hard to justify
+once the Iron material definition below grew to ~100 hand-copied B-H curve
+numbers (see STEEL_GENERIC_H/STEEL_GENERIC_B); build_assembly.py now calls
+generate_regions_pro() directly instead of keeping a second copy in sync.
+magnetostatics_assembly.pro is untouched -- it just `Include`s whatever
+this writes.
 
-Used directly by build_assembly.py's own placeholder excitation would
-still work (same output), and by current_sweep.py to regenerate the file
-per sweep point without remeshing.
+Pole names are "inner_coil"/"outer_coil" (the real Onshape/STEP body
+names) since build_assembly.py switched to importing real coil solids --
+see that script's docstring for why windings no longer carry a zdir (every
+winding's axis is confirmed global Y directly from geometry, so current
+sign is one constant per pole TYPE, not a per-occurrence flip).
+
+Iron is now a NONLINEAR material (generic soft steel B-H curve), not the
+mur_iron=1000 linear placeholder every earlier version of this pipeline
+used. Data source: GetDP's own bundled
+tools/getdp-3.5.0-Windows64/templates/Lib_Materials.pro (SteelGeneric_
+magnetic_field_list()/_magnetic_flux_density_list(), lines ~88-105) --
+copied inline here rather than `Include`d from that path, since `tools/`
+is gitignored/machine-local (see gmsh_getdp/README.md Setup). The
+reluctivity-interpolation derivation (nu as a function of B^2, built via
+ListAlt[] + InterpolationLinear[SquNorm[$1]]{...}) is the same pattern
+Lib_Materials.pro itself uses (lines ~173-192) and that GetDP's own
+examples/magnet.pro exercises for a real nonlinear a-formulation solve --
+not invented for this project. Air/Windings stay linear (mu_r=1, no
+argument needed); only Iron's nu[] definition takes an argument now, which
+is why the Formulation (magnetostatics_assembly.pro) splits the single
+Galerkin term over Domain into a linear part (Air+Windings, nu[]) and a
+nonlinear part (Iron, nu[{d a}]) -- same split GetDP's own
+Lib_Magnetostatics_a_phi.pro template uses for Vol_L_Mag vs Vol_NL_Mag.
 """
 import math
 
@@ -25,9 +46,37 @@ from params_utils import parse_params
 MU0 = 4 * math.pi * 1e-7
 
 DEFAULT_EXCITATION = {
-    "center_solenoid": dict(turns=300, current=5.0, polarity=-1),
-    "outer_solenoid":  dict(turns=200, current=5.0, polarity=+1),
+    "inner_coil": dict(turns=300, current=5.0, polarity=-1),
+    "outer_coil": dict(turns=200, current=5.0, polarity=+1),
 }
+
+# Generic soft steel B-H curve, verbatim from GetDP's bundled
+# Lib_Materials.pro (SteelGeneric_magnetic_field_list() /
+# _magnetic_flux_density_list()) -- see module docstring. H in A/m, B in T,
+# 49 points, saturating in the 1.5-2.4 T range.
+STEEL_GENERIC_H = [
+    0.0000e+00, 5.5023e+00, 1.1018e+01, 1.6562e+01, 2.2149e+01, 2.7798e+01, 3.3528e+01,
+    3.9363e+01, 4.5335e+01, 5.1479e+01, 5.7842e+01, 6.4481e+01, 7.1470e+01, 7.8906e+01,
+    8.6910e+01, 9.5644e+01, 1.0532e+02, 1.1620e+02, 1.2868e+02, 1.4322e+02, 1.6050e+02,
+    1.8139e+02, 2.0711e+02, 2.3932e+02, 2.8028e+02, 3.3314e+02, 4.0231e+02, 4.9395e+02,
+    6.1678e+02, 7.8320e+02, 1.0110e+03, 1.3257e+03, 1.7645e+03, 2.3819e+03, 3.2578e+03,
+    4.5110e+03, 6.3187e+03, 8.9478e+03, 1.2802e+04, 1.8500e+04, 2.6989e+04, 3.9739e+04,
+    5.9047e+04, 8.8520e+04, 1.3388e+05, 2.0425e+05, 3.1434e+05, 4.8796e+05, 7.6403e+05,
+]
+STEEL_GENERIC_B = [
+    0.0000e+00, 5.0000e-02, 1.0000e-01, 1.5000e-01, 2.0000e-01, 2.5000e-01, 3.0000e-01,
+    3.5000e-01, 4.0000e-01, 4.5000e-01, 5.0000e-01, 5.5000e-01, 6.0000e-01, 6.5000e-01,
+    7.0000e-01, 7.5000e-01, 8.0000e-01, 8.5000e-01, 9.0000e-01, 9.5000e-01, 1.0000e+00,
+    1.0500e+00, 1.1000e+00, 1.1500e+00, 1.2000e+00, 1.2500e+00, 1.3000e+00, 1.3500e+00,
+    1.4000e+00, 1.4500e+00, 1.5000e+00, 1.5500e+00, 1.6000e+00, 1.6500e+00, 1.7000e+00,
+    1.7500e+00, 1.8000e+00, 1.8500e+00, 1.9000e+00, 1.9500e+00, 2.0000e+00, 2.0500e+00,
+    2.1000e+00, 2.1500e+00, 2.2000e+00, 2.2500e+00, 2.3000e+00, 2.3500e+00, 2.4000e+00,
+]
+assert len(STEEL_GENERIC_H) == len(STEEL_GENERIC_B) == 49
+
+
+def _gmsh_list(values):
+    return "{" + ", ".join(repr(v) for v in values) + "}"
 
 
 def generate_regions_pro(params, excitation, out_path="assembly_regions_generated.pro"):
@@ -36,9 +85,9 @@ def generate_regions_pro(params, excitation, out_path="assembly_regions_generate
 
     lines = []
     lines.append("// AUTO-GENERATED by generate_regions.py -- do not hand-edit.")
-    lines.append("// Region tags and winding current-density sources for the real")
-    lines.append("// BPL-700 assembly. See build_assembly.py for derivation, this")
-    lines.append("// file for how excitation-only regeneration works (no remesh).")
+    lines.append("// Region tags, nonlinear iron B-H curve, and winding current-density")
+    lines.append("// sources for the real BPL-700 assembly. See generate_regions.py for")
+    lines.append("// derivation.")
     lines.append("")
     lines.append("Group {")
     for name, t in sorted(tag.items(), key=lambda kv: kv[1]):
@@ -51,23 +100,34 @@ def generate_regions_pro(params, excitation, out_path="assembly_regions_generate
     lines.append("")
     lines.append("Function {")
     lines.append(f"  mu0 = {MU0!r};")
-    lines.append("  mur_iron = 1000;  // reasonable placeholder (linear) -- see README caveat: soft iron")
-    lines.append("                    // needs a real nonlinear B-H curve for accuracy near saturation")
+    lines.append("")
+    lines.append("  // Generic soft steel B-H curve (GetDP's bundled SteelGeneric material --")
+    lines.append("  // see this script's module docstring for the exact source/derivation).")
+    lines.append(f"  SteelGeneric_H() = {_gmsh_list(STEEL_GENERIC_H)};")
+    lines.append(f"  SteelGeneric_B() = {_gmsh_list(STEEL_GENERIC_B)};")
+    lines.append("  SteelGeneric_B2() = SteelGeneric_B()^2;")
+    lines.append("  SteelGeneric_nu_list() = SteelGeneric_H() / SteelGeneric_B();")
+    lines.append("  SteelGeneric_nu_list(0) = SteelGeneric_nu_list(1);  // avoid 0/0 at B=0")
+    lines.append("  SteelGeneric_nu_b2_list() = ListAlt[SteelGeneric_B2(), SteelGeneric_nu_list()];")
+    lines.append("  SteelGeneric_nu[] = InterpolationLinear[SquNorm[$1]]{SteelGeneric_nu_b2_list()};")
+    lines.append("")
     lines.append("  nu[Air]  = 1 / mu0;")
-    lines.append("  nu[Iron] = 1 / (mur_iron * mu0);")
+    lines.append("  nu[Iron] = SteelGeneric_nu[$1];  // nonlinear -- see magnetostatics_assembly.pro")
+    lines.append("                                   // for the Vol_L_Mag/Vol_NL_Mag Galerkin split this requires")
     lines.append("  nu[Windings] = 1 / mu0;  // copper, non-magnetic")
     lines.append("")
     for w in params["windings"]:
-        i, name, A_cross, loc, zdir = w["index"], w["pole"], w["A_cross"], w["loc"], w["zdir"]
+        i, name, A_cross, loc = w["index"], w["pole"], w["A_cross"], w["loc"]
         exc = excitation[name]
-        zy = int(round(zdir[1]))
-        assert zdir[0] == 0 and zdir[2] == 0 and abs(zy) == 1, \
-            f"winding {i} ({name}) local axis isn't along global Y ({zdir}) -- Js[] formula below assumes it is"
-        Jmag = exc["polarity"] * zy * exc["turns"] * exc["current"] / A_cross
+        Jmag = exc["polarity"] * exc["turns"] * exc["current"] / A_cross
+        lx, lz = loc
         lines.append(f"  // Winding{i}: pole={name} turns={exc['turns']} I={exc['current']}A "
-                      f"A_cross={A_cross:.6e} zdir_y={zy:+d} polarity={exc['polarity']:+d} -> Jmag={Jmag:.6e} A/m^2")
-        lines.append(f"  Js[Winding{i}] = ({Jmag!r} / Sqrt[(X[]-({loc[0]!r}))^2 + (Z[]-({loc[2]!r}))^2]) * "
-                      f"Vector[(Z[]-({loc[2]!r})), 0, -(X[]-({loc[0]!r}))];")
+                      f"A_cross={A_cross:.6e} polarity={exc['polarity']:+d} -> Jmag={Jmag:.6e} A/m^2")
+        # $IFrac: excitation load-stepping fraction, ramped 0->1 by
+        # magnetostatics_assembly.pro's Resolution to keep the nonlinear
+        # iron iteration stable -- see that file's header comment.
+        lines.append(f"  Js[Winding{i}] = $IFrac * ({Jmag!r} / Sqrt[(X[]-({lx!r}))^2 + (Z[]-({lz!r}))^2]) * "
+                      f"Vector[(Z[]-({lz!r})), 0, -(X[]-({lx!r}))];")
     lines.append("}")
     lines.append("")
 
@@ -78,4 +138,4 @@ def generate_regions_pro(params, excitation, out_path="assembly_regions_generate
 if __name__ == "__main__":
     params = parse_params()
     generate_regions_pro(params, DEFAULT_EXCITATION)
-    print("Wrote assembly_regions_generated.pro (default placeholder excitation, center 300t/5A vs outer 200t/5A)")
+    print("Wrote assembly_regions_generated.pro (default placeholder excitation, inner 300t/5A vs outer 200t/5A)")

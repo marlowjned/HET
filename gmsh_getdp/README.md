@@ -19,23 +19,40 @@ read results back), not the numerical engine.
   for a finite thick solenoid (1.4% agreement) -- confirms the mesh,
   formulation, and gauge are all correct before trusting them on the real
   CAD.
-- **Real assembly**: done and solving. `assembly/` imports the real
-  BPL-700 iron parts, places them with the same per-occurrence transforms
-  as `../matlab/new_export/apply_transforms.m`, fuses them into one solid,
-  builds the 5 windings, meshes, and solves. **All 9 real touching
-  interfaces mesh cleanly** (vs. MATLAB's 4/9) -- see "The geometry win"
-  below.
-- **Center/outer current-ratio sweep**: done. `assembly/current_sweep.py`
-  found the most radial (E x B - correct) channel field at
-  `I_center = I_outer` -- see "Current ratio sweep" below.
-- **Materials**: linear placeholder only (`mur_iron = 1000`, no B-H
-  saturation curve). See "Known limitations" below.
-- **chamber / injector**: deliberately excluded from the solid model (see
-  `assembly/build_assembly.py` docstring) -- they're magnetically inert
-  (mu_r ~= 1, same as air), so omitting them doesn't affect the B-field
-  solve, and it sidesteps two more geometry problems (a genuine 3D overlap
-  sliver between chamber and iron, and injector's independently dirty STEP
-  tessellation -- both already flagged in `../matlab/README.md`).
+- **Real assembly**: done and solving, now sourced from a **whole-assembly
+  Onshape STEP export** (via `../onshape/cache.py`) rather than the
+  original per-part-STEP + hardcoded-transform approach. `assembly/
+  build_assembly.py` imports all 14 named bodies directly (7 iron + 5 real
+  coil solids + chamber + chamber_spacer), fuses the iron bodies
+  **incrementally** into one solid, keeps the 5 coil solids as real
+  windings (no more `occ.addCylinder`/`occ.cut` primitive construction),
+  meshes, and solves. **All real touching interfaces mesh cleanly** (vs.
+  MATLAB's 4/9) -- see "The geometry win" below. All 5 real Onshape
+  Configuration parameters (`emag_height`, `inner/outer_coil_id/od`) now
+  drive this pull -- see `../onshape/cache.py`'s docstring for why (the
+  soft-iron core's diameter IS the coil ID it wraps, so there's no
+  separate core-diameter parameter). `chamber_spacer` is treated as iron
+  for now (`build_assembly.py --exclude-chamber-spacer` to test the inert
+  alternative) -- its real material isn't confirmed.
+- **Center/outer current-ratio sweep**: done at the old geometry and the
+  old linear-iron material (pole names `center_solenoid`/`outer_solenoid`,
+  since renamed to `inner_coil`/`outer_coil` -- `current_sweep.py` itself
+  is updated for the rename, but hasn't been re-run against the new
+  whole-assembly geometry). Found the most radial (E x B - correct)
+  channel field at `I_center = I_outer` -- see "Current ratio sweep"
+  below. **Its 2-basis-solve superposition trick assumes a linear
+  material** -- now that Iron is nonlinear (see below), that trick no
+  longer holds; `current_sweep.py` needs a real per-ratio nonlinear solve
+  to be trustworthy again, not just a rename.
+- **Materials**: nonlinear iron (generic soft-steel B-H curve) is now
+  implemented, replacing the `mur_iron = 1000` linear placeholder --
+  IN PROGRESS, solve not yet confirmed convergent. See "Nonlinear iron
+  (B-H curve)" below.
+- **chamber**: deliberately excluded from the solid model (see
+  `assembly/build_assembly.py` docstring) -- magnetically inert (mu_r ~=
+  1, same as air), so omitting it doesn't affect the B-field solve.
+  **injector** isn't present in the whole-assembly STEP export at all
+  (confirmed) -- harmless, it was already excluded for the same reason.
 
 ## Setup
 
@@ -196,43 +213,92 @@ that constraint, power grows with the square of current on whichever
 coil's current changes (e.g. `I_center` swept from 2-12.5 A above swings
 center-coil power alone from ~0.9 W to ~35-46 W at fixed `I_outer = 5A`).
 
-## Whole-assembly STEP import (spike, not yet in the build pipeline)
+## Whole-assembly STEP import (now the live pipeline)
 
-`assembly/scratch_whole_assembly_import.py` validates a simpler alternative
-to the current per-part-STEP-export + hardcoded-placement-table pipeline
-(`build_assembly.py`'s `TRANSFORMS`, ported from
-`matlab/new_export/apply_transforms.m`): importing the **whole-assembly**
-STEP directly. Findings, relevant to any future parametric/sweep pipeline:
+`assembly/scratch_whole_assembly_import.py` was the spike that validated
+this; `build_assembly.py` now uses it for real, replacing the old
+per-part-STEP-export + hardcoded-placement-table pipeline entirely
+(`TRANSFORMS`, ported from `matlab/new_export/apply_transforms.m`, is
+gone). Findings that carried over from the spike into the real pipeline:
 
 - Gmsh/OCC recovers Onshape's own real per-occurrence placement exactly
-  (verified against `apply_transforms.m`'s table) and preserves part names
-  as entity labels -- no manual per-file transform bookkeeping needed.
-- Fusing all 7 iron parts in **one batch call** (as `build_assembly.py`
-  does today) only produced 3 disjoint solids on this file, not 1 --
-  OCC's fuzzy boolean union is order/grouping-dependent (same non-symmetry
-  already noted in `../matlab/README.md` for MATLAB's kernel). Fusing
-  **incrementally** (one part folded into the growing result at a time)
-  gave the correct single solid (73 boundary faces, meshes cleanly).
-- The usual mm-labeled-as-m unit bug is present in this STEP too, but
-  fixing it via `occ.dilate()` on solids pulled from an *assembly*-
-  structured STEP is unreliable (produces small, part-specific placement
-  drift -- see the script's docstring for the suspected cause). Didn't
-  break this particular result, but shouldn't be trusted going forward.
-  The real fix: have any future parametrized Onshape export emit correct
-  real-world units directly, rather than relying on a post-import scale
-  correction.
+  and preserves part names as entity labels -- no manual per-file
+  transform bookkeeping needed. Confirmed body names (2026-09-18 pull):
+  `top_plate`, `bottom_plate`, `inner_emag_core`, `outer_emag_core` (x4)
+  -- iron; `inner_coil`, `outer_coil` (x4) -- real winding solids;
+  `chamber`, `chamber_spacer`.
+- Fusing all iron parts in **one batch call** only produced 3 disjoint
+  solids on this file, not 1 -- OCC's fuzzy boolean union is
+  order/grouping-dependent (same non-symmetry already noted in
+  `../matlab/README.md` for MATLAB's kernel). Fusing **incrementally**
+  (one part folded into the growing result at a time) gives the correct
+  single solid, and is what `build_assembly.py` does now.
+- The usual mm-labeled-as-m unit bug is present in this STEP too --
+  `build_assembly.py` applies the `0.001` scale to all imported solids at
+  once, right after import (before any boolean op), which the spike found
+  more reliable than scaling pre-placed per-part templates.
+- **New gotcha found wiring this in for real** (not seen in the spike,
+  which only checked placement, not areas/volumes): `occ.getBoundingBox()`
+  returns a **loose/conservative box on curved STEP-imported solids** --
+  e.g. a coil's true X/Z extent (confirmed via actual mesh nodes) equals
+  its OD on both axes, but `getBoundingBox()` reports the right value on
+  one axis and up to ~1.75x too large on the other, for the *same* solid,
+  reproducible with no boolean ops involved at all. Only the axis bounded
+  by curved (not flat end-cap) surface is affected. `build_assembly.py`
+  no longer uses `getBoundingBox()` for anything needing X/Z precision on
+  these bodies -- `getMass()`/`getCenterOfMass()` (volume integrals over
+  the true trimmed solid, not boundary-based) are trustworthy and used
+  instead.
 
-Not wired into `build_assembly.py` yet -- kept as a validated reference
-for whichever CAD pipeline design gets built next.
+## Nonlinear iron (B-H curve) -- IN PROGRESS, not yet validated
+
+Replacing the `mur_iron = 1000` linear placeholder with a real saturating
+B-H curve, since the linear solve was reporting unphysical peak |B|
+(9.7 T under the old geometry, 2.16 T under the new whole-assembly
+geometry at the current placeholder excitation -- both well past where
+real soft iron saturates, ~1.5-2 T).
+
+- **Material**: generic soft steel, using GetDP's own bundled
+  `SteelGeneric` dataset (`tools/getdp-3.5.0-Windows64/templates/
+  Lib_Materials.pro`, 49-point H/B table) -- copied inline into
+  `generate_regions.py` (not `Include`d from `tools/`, which is
+  gitignored/machine-local) rather than sourcing a real alloy datasheet,
+  since the actual BPL-700 pole material isn't specified. Reluctivity is
+  built as a piecewise-linear interpolation of `H/B` vs `B^2`
+  (`InterpolationLinear[SquNorm[$1]]{...}`, the same derivation
+  `Lib_Materials.pro` itself uses), assigned to `Iron` only --
+  `Air`/`Windings` stay linear.
+- **Formulation**: `magnetostatics_assembly.pro`'s single
+  `nu[] * Dof{d a}` Galerkin term is now split into a linear part
+  (`Air+Windings`) and a nonlinear (Picard) part over `Iron`
+  (`nu[{d a}]`), evaluated at the previous iteration's field -- same
+  `Vol_L_Mag`/`Vol_NL_Mag` split GetDP's own `Lib_Magnetostatics_a_phi.pro`
+  template uses. Full Newton (with a `dhdb[]` tangent term) was the
+  template's own default, but its exact tangent-derivative macro syntax
+  (`SquDyadicProduct[#1]`-based) wasn't confidently reproducible without
+  risking a silently-wrong-not-obviously-broken linearization, so Picard
+  was chosen for v1 as the lower-risk option.
+- **Plain Picard diverges from a cold start**: tried first, confirmed
+  empirically -- residual dropped 613 -> 96 over 2 iterations, then
+  exploded to 1.7e5 on the 3rd. Root cause: this B-H curve's slope gets
+  extremely steep near saturation (H jumps from 3.1e5 to 7.6e5 A/m over
+  the last few tenths of a Tesla), and the linear solve's own peak
+  (2.16 T) starts the very first nonlinear iteration right in that steep
+  region -- too large a jump for unrelaxed Picard to track.
+- **Fix: load-stepping (continuation)**. Excitation is scaled by a
+  runtime `$IFrac` (in `Js[]`, `generate_regions.py`), ramped in 8 stages
+  from 1/8 to full current in `magnetostatics_assembly.pro`'s Resolution,
+  Picard-converging fully at each stage before stepping up -- every stage
+  continues from the previous stage's already-converged field (no
+  `InitSolution` between stages), so each individual Picard step only
+  tracks a small change instead of jumping from zero into saturation.
+- **Status as of this writing**: the load-stepped solve is running
+  (expected ~25-40 min, 8 stages x several Generate/Solve/GetResidual
+  cycles each on a 589k-DOF system) -- not yet confirmed convergent or
+  checked against a physically-sane peak |B| (~1.5-2 T expected). Update
+  this section once that result is in.
 
 ## Known limitations / next steps
-
-- **Linear iron, no saturation.** `mur_iron = 1000` is a reasonable
-  placeholder, not a real B-H curve -- the solve shows |B| up to ~9.7 T in
-  the iron near the windings (median ~2.7 T), well past where real soft
-  iron saturates (~1.5-2 T). GetDP supports nonlinear `nu[]` via a B-H
-  interpolation function; needs the actual alloy's B-H curve (same gap
-  noted in `../matlab/README.md`).
 - **chamber/injector geometry not in the solve.** Fine for magnetostatics
   (inert, mu_r ~= 1) but would need reintroducing -- with a real inflate/
   clearance-gap fix, not a knife-edge boolean cut -- for any future

@@ -5,6 +5,12 @@ Parses assembly_params.txt (written once by build_assembly.py) so
 downstream scripts -- generate_regions.py, current_sweep.py -- can get
 winding geometry (pole type, cross-section area, placement) and channel
 geometry without re-running the expensive geometry/meshing step.
+
+Winding entries no longer carry zdir/xref: since build_assembly.py started
+sourcing windings as real Onshape coil solids (not Gmsh-built primitives
+placed via a hardcoded transform table), every winding's axis is
+confirmed global Y directly from geometry, so only its (x,z) axis location
+and cross-section area are needed -- see build_assembly.py's docstring.
 """
 import re
 
@@ -30,7 +36,7 @@ def parse_params(path="assembly_params.txt"):
             if line.startswith("n_windings "):
                 n_windings = int(line.split()[1])
                 continue
-            m = re.match(r"^winding(\d+) pole=(\S+) A_cross=(\S+) loc=(\([^)]*\)) zdir=(\([^)]*\)) xref=(\([^)]*\))$", line)
+            m = re.match(r"^winding(\d+) pole=(\S+) A_cross=(\S+) loc=(\([^)]*\))$", line)
             if m:
                 idx = int(m.group(1))
                 windings.append(dict(
@@ -38,8 +44,6 @@ def parse_params(path="assembly_params.txt"):
                     pole=m.group(2),
                     A_cross=float(m.group(3)),
                     loc=_parse_vec(m.group(4)),
-                    zdir=_parse_vec(m.group(5)),
-                    xref=_parse_vec(m.group(6)),
                 ))
                 continue
             parts = line.split(None, 1)

@@ -8,16 +8,17 @@ export for a given `emag_height` without going through the Onshape UI by
 hand.
 
 The assembly exposes 5 Configuration parameters: `emag_height`,
-`inner_coil_id`, `inner_coil_od`, `outer_coil_id`, `outer_coil_od`. Only
-`emag_height` is ever sent to Onshape, though -- it's the one parameter
-that cascades through Onshape's mates (repositions `chamber_spacer`, the
-plates, etc.; confirmed empirically: `chamber_spacer` height changed from
-0.875in to 0.375in when `emag_height` went from its 2.0in default to
-1.5in). The four coil ID/OD parameters are purely local resizes (nothing
-else moves), so they're left at their Onshape defaults on every pull and
-instead resized directly in Gmsh downstream -- see `cache.py`'s docstring
-and the project's planning notes for why that split matters for API-call
-budget.
+`inner_coil_id`, `inner_coil_od`, `outer_coil_id`, `outer_coil_od` --
+confirmed via a live `GET .../configuration` call, not assumed. **All 5
+are sent to Onshape on every pull** (via `get_step_for_config`, keyed on
+the full 5-param dict). An earlier version of this module sent only
+`emag_height` and left the 4 coil ID/OD params at their Onshape defaults,
+on the assumption they were purely local resizes not worth an API call --
+that assumption was wrong: Onshape models a real coil solid per winding
+(`inner_coil`/`outer_coil` in the STEP export), and the coil ID params
+also size the soft-iron core each coil wraps (there's no separate
+core-diameter parameter -- the core IS sized by the coil ID it sits
+inside). See `cache.py`'s docstring for the multi-param encoding details.
 
 ## Setup
 
@@ -120,6 +121,8 @@ call; a miss costs a translation request + poll + download (~10s here).
 
 ## Next
 
-Not yet built: the Gmsh-side local resize of `inner_coil_id/od` and
-`outer_coil_id/od` on top of a cached `emag_height` pull, and the
-runsheet/sweep orchestration on top of that.
+`get_step_for_config` and `gmsh_getdp/assembly/build_assembly.py` (whole-
+assembly STEP import, real coil solids, incremental iron fuse) are wired
+together and validated end-to-end with a real solve. Not yet built:
+nonlinear iron (B-H curve, replacing the `mur_iron=1000` placeholder) and
+the runsheet/sweep orchestration across the parameter grid.

@@ -50,12 +50,12 @@ BASIS_NPZ = "channel_basis.npz"
 
 BASIS_EXCITATION = {
     "center": {
-        "center_solenoid": dict(turns=300, current=1.0, polarity=-1),
-        "outer_solenoid":  dict(turns=200, current=0.0, polarity=+1),
+        "inner_coil": dict(turns=300, current=1.0, polarity=-1),
+        "outer_coil": dict(turns=200, current=0.0, polarity=+1),
     },
     "outer": {
-        "center_solenoid": dict(turns=300, current=0.0, polarity=-1),
-        "outer_solenoid":  dict(turns=200, current=1.0, polarity=+1),
+        "inner_coil": dict(turns=300, current=0.0, polarity=-1),
+        "outer_coil": dict(turns=200, current=1.0, polarity=+1),
     },
 }
 

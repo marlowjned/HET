@@ -36,33 +36,41 @@ status report — each subfolder's own README/notes carry current status.
 - **`tools/`** — gitignored, machine-local third-party binaries (the
   Windows GetDP executable). Not checked in; see `gmsh_getdp/README.md`
   "Setup" for how to repopulate it on a new machine.
-- **`onshape/`** — HMAC API-key auth layer for scripting against a
-  parametrized Onshape CAD document (electromagnet height/spacer/iron
-  radius as configuration variables), in support of a geometry sweep. Auth
-  validated end-to-end; STEP export per configuration not yet built. See
-  `onshape/README.md`.
+- **`onshape/`** — HMAC API-key auth layer + caching STEP pull for a
+  parametrized Onshape CAD document, keyed on all 5 real Configuration
+  parameters (`emag_height`, `inner/outer_coil_id/od`). Auth and the
+  multi-param STEP export are both validated end-to-end and wired
+  directly into `gmsh_getdp/assembly/build_assembly.py`'s geometry
+  ingestion. See `onshape/README.md`.
 
 ## How the pieces fit together
 
 `sizing/` → target channel geometry and B-field (not yet actually wired
 into the CAD dimensions below — the CAD is the existing real BPL-700
 hardware, not a from-scratch design derived from this script). CAD
-geometry and per-part placement transforms originate in `matlab/`
-(`new_export/apply_transforms.m`) and are reused as hardcoded values in
-`gmsh_getdp/assembly/build_assembly.py`, since re-deriving them from the
-STEP files a second way isn't necessary. Material list (which parts are
-iron vs. inert) is documented once, in `matlab/README.md`, and consumed by
-both pipelines. From here, active development is in `gmsh_getdp/` —
-`matlab/` is not being advanced further unless the union blocker gets
-resolved on the Onshape side.
+geometry now comes directly from a whole-assembly Onshape STEP export
+(`onshape/cache.py` → `gmsh_getdp/assembly/build_assembly.py`), which
+recovers Onshape's own real per-occurrence placement and part names
+directly — the `matlab/` pipeline's hand-extracted per-part transforms
+are no longer used by `gmsh_getdp/`. Material list (which parts are iron
+vs. inert) originates in `matlab/README.md`'s diagnosis but is
+re-confirmed against the real STEP body names in
+`gmsh_getdp/assembly/build_assembly.py`. From here, active development is
+in `gmsh_getdp/` — `matlab/` is not being advanced further unless the
+union blocker gets resolved on the Onshape side.
 
 ## Current overall status
 
 - Real-geometry magnetostatic B-field solve: **working**, in
-  `gmsh_getdp/assembly/`, with a placeholder linear-iron material model
-  (no B-H saturation curve yet) and placeholder winding currents.
+  `gmsh_getdp/assembly/`, sourced from a parametrized whole-assembly
+  Onshape STEP export (all 5 geometry params) rather than a fixed
+  hardcoded geometry. Nonlinear iron (generic soft-steel B-H curve,
+  replacing the old linear `mur_iron=1000` placeholder) is implemented
+  but not yet confirmed convergent — see `gmsh_getdp/README.md`
+  "Nonlinear iron (B-H curve)". Winding currents are still placeholders.
 - Top-level thruster sizing (power/thrust/Isp from design targets):
   **working**, standalone, in `sizing/`.
 - Not yet started: wiring `sizing/`'s targets into the CAD dimensions,
-  nonlinear iron (B-H curve), electric-field/plasma simulation, electron
+  the geometry/thermal sweep runsheet and orchestrator across the 5
+  Onshape parameters, electric-field/plasma simulation, electron
   trajectory/stability, thermal, and structural/force analysis.
