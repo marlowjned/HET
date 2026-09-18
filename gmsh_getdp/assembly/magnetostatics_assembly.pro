@@ -33,13 +33,41 @@
 // stage's already-converged field (no InitSolution between stages), so
 // every individual Picard step only has to track a small change instead
 // of jumping from zero straight into saturation.
+//
+// FIRST ATTEMPT (8 uniform steps, NL_iter_max=20, NL_tol_rel=1e-6) --
+// RAN BUT DID NOT CONVERGE, confirmed empirically (2026-09-18, ~97min
+// wall/10.3hr CPU): steps at 12.5/25/37.5% converged cleanly (2, 4, 9
+// iterations); 50% was still improving MONOTONICALLY every iteration
+// (never oscillating) but hit NL_iter_max=20 at rel residual ~2e-3, well
+// short of the 1e-6 tolerance -- genuinely converging, just slower than
+// budgeted. Because that stage got cut off unconverged, 62.5% then started
+// from a field that wasn't really the correct 50% solution, and
+// immediately began OSCILLATING (residual up-down-up, not just slow) --
+// by 75-100% the residual was exploding by 1-3 orders of magnitude per
+// iteration. Saved (garbage) result: peak |B| 6.5 T, confirming the final
+// field is not physically valid. Root cause was budget, not a
+// fundamentally unreachable solution -- fix below is a finer ramp (more
+// resolution right where the slowdown started, ~40-100%) and a much
+// larger per-stage iteration budget, not a different method.
 
 Include "assembly_regions_generated.pro";
 
+// RampFrac(): non-uniform load-stepping schedule, finer above 40% where
+// the first attempt's convergence rate started visibly slowing down (see
+// comment above) -- 16 stages instead of 8, denser near saturation.
+Function {
+  RampFrac() = {0.1, 0.2, 0.3, 0.4, 0.45, 0.5, 0.55, 0.6,
+                0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0};
+}
+
 DefineConstant[
   NL_tol_abs = 1e-6,   // absolute tolerance on residual for the nonlinear iron iteration
-  NL_tol_rel = 1e-6,   // relative tolerance on residual for the nonlinear iron iteration
-  NL_iter_max = 20     // maximum nonlinear (Picard) iterations PER load-step
+  NL_tol_rel = 1e-4,   // relaxed from 1e-6: the first attempt's 50% stage was still
+                        // legitimately converging at 20 iterations/2e-3 rel -- 1e-4 is
+                        // still tight for engineering sizing purposes and reaches that
+                        // regime in far fewer iterations than chasing 1e-6 would
+  NL_iter_max = 60      // raised from 20 -- see comment above, 20 wasn't enough budget
+                        // for a stage that WAS converging, just slowly
 ];
 
 Jacobian {
@@ -131,8 +159,8 @@ Resolution {
       // stage -- every later stage continues from the previous stage's
       // converged field, not from zero.
       InitSolution[Sys_a];
-      For n In {1:8}
-        Evaluate[ $IFrac = n / 8.0 ];
+      For n In {0:#RampFrac()-1}
+        Evaluate[ $IFrac = RampFrac(n) ];
         Generate[Sys_a]; Solve[Sys_a];
         Generate[Sys_a]; GetResidual[Sys_a, $res0];
         Evaluate[ $res = $res0, $iter = 0 ];

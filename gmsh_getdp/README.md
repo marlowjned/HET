@@ -286,17 +286,53 @@ real soft iron saturates, ~1.5-2 T).
   (2.16 T) starts the very first nonlinear iteration right in that steep
   region -- too large a jump for unrelaxed Picard to track.
 - **Fix: load-stepping (continuation)**. Excitation is scaled by a
-  runtime `$IFrac` (in `Js[]`, `generate_regions.py`), ramped in 8 stages
-  from 1/8 to full current in `magnetostatics_assembly.pro`'s Resolution,
-  Picard-converging fully at each stage before stepping up -- every stage
-  continues from the previous stage's already-converged field (no
-  `InitSolution` between stages), so each individual Picard step only
-  tracks a small change instead of jumping from zero into saturation.
-- **Status as of this writing**: the load-stepped solve is running
-  (expected ~25-40 min, 8 stages x several Generate/Solve/GetResidual
-  cycles each on a 589k-DOF system) -- not yet confirmed convergent or
-  checked against a physically-sane peak |B| (~1.5-2 T expected). Update
-  this section once that result is in.
+  runtime `$IFrac` (in `Js[]`, `generate_regions.py`), ramped up in
+  stages from a small fraction to full current in
+  `magnetostatics_assembly.pro`'s Resolution, Picard-converging fully at
+  each stage before stepping up -- every stage continues from the
+  previous stage's already-converged field (no `InitSolution` between
+  stages), so each individual Picard step only tracks a small change
+  instead of jumping from zero into saturation.
+- **First attempt (8 uniform stages, `NL_iter_max=20`, `NL_tol_rel=1e-6`)
+  ran to completion but did not converge.** Confirmed empirically
+  (~97 min wall / ~10.3 CPU-hr): stages up to 37.5% converged cleanly (2,
+  4, 9 iterations); the 50% stage was still improving *monotonically*
+  every iteration (never oscillating) but hit the 20-iteration cap at rel.
+  residual ~2e-3 -- genuinely converging, just under-budgeted, not
+  diverging. Because that stage got cut off unconverged, the next stage
+  (62.5%) inherited a not-quite-right field and started oscillating; by
+  75-100% the residual was exploding 1-3 orders of magnitude per
+  iteration. The saved (garbage) result had peak |B| = 6.5 T, confirming
+  it wasn't a real solution. Root cause: iteration/tolerance budget, not
+  an unreachable solution.
+- **Second attempt: finer ramp (16 non-uniform stages, denser above 40%),
+  `NL_iter_max=60`, `NL_tol_rel` relaxed to 1e-4.** This behaved much
+  better -- stages 0-3 (10/20/30/40%) all converged cleanly and
+  monotonically (2, 4, 6, 9 iterations respectively, well inside the new
+  budget), no oscillation at all through 40% (vs. the first attempt's
+  visible strain already building by 37.5%). **Killed by the harness at
+  ~53 min in (partway into stage 4, 45%) due to host-level memory
+  pressure** -- not a divergence or a bug in the solve itself. Both
+  attempts showed the same pattern: `getdp.exe`'s resident memory
+  oscillates (grows during a Generate/Solve/factorization, drops after)
+  rather than climbing monotonically, but the *peaks* got large enough
+  (workstation has 31 GB RAM; observed available-memory dips as low as
+  ~4.5 GB on the second run) that the environment's own low-memory
+  protection stepped in before stage 4 could finish. Likely cause:
+  MUMPS's LU factorization data isn't being released between the many
+  repeated `Generate[]`/`Solve[]` calls this manual iteration loop makes
+  (16 stages x up to several iterations each, all against a 589k-DOF
+  system) -- plausible but not root-caused.
+- **Status as of this writing**: not yet run to a valid, converged
+  result. The algorithm itself looks sound (4 of 16 stages converged
+  cleanly, no oscillation) -- what's blocking completion is host memory
+  headroom for this many repeated large sparse solves, not the nonlinear
+  method. Next attempt should either free up more system RAM first,
+  reduce the number of repeated Generate/Solve calls (e.g. fewer, coarser
+  stages now that stages up to 40% converge easily -- the fine stepping
+  above 40% was the untested part anyway), or investigate whether GetDP/
+  MUMPS has an explicit factorization-reuse or memory-release option that
+  isn't being used here.
 
 ## Known limitations / next steps
 - **chamber/injector geometry not in the solve.** Fine for magnetostatics
