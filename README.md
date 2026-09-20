@@ -33,6 +33,13 @@ status report — each subfolder's own README/notes carry current status.
   `gmsh_getdp/README.md` for status/results and `gmsh_getdp/HOW_IT_WORKS.md`
   for the physics-to-code walkthrough (read that one to understand *why*
   any given step exists, not just what it does).
+- **`thermal/`** — steady-state thermal model of the magnet circuit
+  running on its own (coil dissipation only, no plasma load), in
+  vacuum with radiation as the only heat path. Takes its radiating
+  envelope from the `gmsh_getdp/` mesh and its winding design from
+  that pipeline's operating point. Answers the "is anything getting
+  hot before we add any other physics" question: no, with ~3x current
+  margin to the first material limit. See `thermal/README.md`.
 - **`tools/`** — gitignored, machine-local third-party binaries (the
   Windows GetDP executable). Not checked in; see `gmsh_getdp/README.md`
   "Setup" for how to repopulate it on a new machine.
@@ -74,7 +81,11 @@ union blocker gets resolved on the Onshape side.
   saturation. The magnet circuit needs ~3.7 V at 1.25 A, ~5 W.
 - Top-level thruster sizing (power/thrust/Isp from design targets):
   **working**, standalone, in `sizing/`.
+- Magnets-only thermal: **working**, in `thermal/` — 61 °C at the
+  design point, first material limit (wire insulation) at ~2.5× design
+  current. Plasma-loaded thermal is not modelled.
 - Not yet started: wiring `sizing/`'s targets into the CAD dimensions,
-  the geometry/thermal sweep runsheet and orchestrator across the 5
-  Onshape parameters, electric-field/plasma simulation, electron
-  trajectory/stability, thermal, and structural/force analysis.
+  the geometry sweep runsheet and orchestrator across the 5 Onshape
+  parameters, electric-field/plasma simulation, electron
+  trajectory/stability, plasma-loaded thermal, and structural/force
+  analysis.
