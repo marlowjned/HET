@@ -38,16 +38,26 @@ read results back), not the numerical engine.
   old linear-iron material (pole names `center_solenoid`/`outer_solenoid`,
   since renamed to `inner_coil`/`outer_coil` -- `current_sweep.py` itself
   is updated for the rename, but hasn't been re-run against the new
-  whole-assembly geometry). Found the most radial (E x B - correct)
-  channel field at `I_center = I_outer` -- see "Current ratio sweep"
-  below. **Its 2-basis-solve superposition trick assumes a linear
-  material** -- now that Iron is nonlinear (see below), that trick no
-  longer holds; `current_sweep.py` needs a real per-ratio nonlinear solve
-  to be trustworthy again, not just a rename.
-- **Materials**: nonlinear iron (generic soft-steel B-H curve) is now
-  implemented, replacing the `mur_iron = 1000` linear placeholder --
-  IN PROGRESS, solve not yet confirmed convergent. See "Nonlinear iron
-  (B-H curve)" below.
+  whole-assembly geometry, and its channel statistics predate the ROI
+  correction below). Found the most radial (E x B - correct) channel
+  field at `I_center = I_outer` -- see "Current ratio sweep" below. **Its
+  2-basis-solve superposition trick assumes a linear material**, which
+  looked fatal once Iron became nonlinear -- but at the real ~300 G design
+  point the iron peaks at 0.86 T, well below the B-H knee, so it behaves
+  linearly and the trick is valid again there (confirmed: the nonlinear
+  peak matches a linear-scaled prediction to 0.4%). Re-check that if a
+  future design point pushes the iron toward saturation.
+- **Materials**: nonlinear iron (generic soft-steel B-H curve) replaces
+  the `mur_iron = 1000` linear placeholder, and **converges** -- 11
+  Picard iterations, 19.6 min wall, 805 MB peak. See "Nonlinear iron
+  (B-H curve)" below for how the excitation, not the method, was what
+  made that work.
+- **Excitation**: 2 A per coil (inner 300 t, outer 200 t), sized to the
+  ~300 G channel-exit target rather than inherited from the old MATLAB
+  check. Measured 292 G at the exit plane. See "Operating point" below.
+- **Channel ROI**: the channel bounds in `assembly_params.txt` are the
+  real plasma cavity between the chamber's ceramic walls, not the chamber
+  part's bounding annulus (which contained iron). See "Channel ROI" below.
 - **chamber**: deliberately excluded from the solid model (see
   `assembly/build_assembly.py` docstring) -- magnetically inert (mu_r ~=
   1, same as air), so omitting it doesn't affect the B-field solve.
@@ -152,11 +162,22 @@ swept range), so this isn't a sharp optimum. At that point:
   direction optimal, scale **both** currents together by
   `target / 80.6 mT`, keeping the 1:1 ratio fixed.
 
+**Those three magnitude numbers are stale** -- they were computed with
+the old channel mask (the chamber part's bounding annulus, which
+included iron; see "Channel ROI" above), so they average pole-face field
+into the channel and the spread between mean/median/p90 is largely that
+contamination rather than real structure. Over the corrected plasma
+cavity the field is far more uniform and almost purely radial (97.7%).
+The *ratio* result is unaffected -- that metric is scale-invariant and
+the contamination was symmetric across ratios -- but don't use the mT
+figures above to size current; use "Operating point" instead.
+
 This is a field-direction optimum only -- it says nothing about the
 field *magnitude* needed for a real operating point (that depends on
 electron Larmor radius / discharge voltage requirements, not modeled
-here), and the underlying solve is still the linear/no-saturation
-placeholder (see "Known limitations" below).
+here), and the underlying solve is the linear/no-saturation placeholder
+-- though see "Nonlinear iron" above for why superposition turns out to
+be legitimate at the real design point anyway.
 
 ## Solenoid winding specs (current configuration)
 
@@ -191,27 +212,86 @@ different turn counts and window areas, which is at least consistent
 with one wire gauge being used for the whole coil set rather than
 suggesting a modeling error.
 
-At the swept operating point (`I_center = I_outer = 5 A`, the most
-radial-field ratio found above):
+At the design operating point (`I_center = I_outer = 2 A`, see "Operating
+point" below -- the 1:1 ratio is also the most radial-field ratio found
+in the sweep above):
 
 | | outer coil (each) | center coil | total (1 center + 4 outer) |
 |---|---|---|---|
-| voltage @ 20 C | 0.70 V | 1.11 V | -- |
-| voltage @ 100 C | 0.92 V | 1.46 V | -- |
-| power @ 20 C | 3.49 W | 5.56 W | 19.5 W |
-| power @ 100 C | 4.59 W | 7.31 W | 25.7 W |
+| voltage @ 20 C | 0.28 V | 0.44 V | -- |
+| voltage @ 100 C | 0.37 V | 0.58 V | -- |
+| power @ 20 C | 0.56 W | 0.89 W | 3.1 W |
+| power @ 100 C | 0.73 W | 1.17 W | 4.1 W |
 
 If all 5 coils are wired in series on one supply at this operating point
-(same 5 A through all of them, true only at this 1:1 ratio), the whole
-magnet circuit needs **~3.9-5.1 V at 5 A, ~20-26 W total** depending on
-winding temperature -- a low-voltage, low-power circuit, consistent with
-running off a small bench supply rather than anything resembling the
-discharge (anode) power supply. Moving off the 1:1 ratio breaks the
-series assumption, since `I_center != I_outer` then requires either two
+(same 2 A through all of them, true only at this 1:1 ratio), the whole
+magnet circuit needs **~1.6-2.1 V at 2 A, ~3-4 W total** depending on
+winding temperature -- a trivially small bench-supply load, nothing like
+the discharge (anode) supply. Moving off the 1:1 ratio breaks the series
+assumption, since `I_center != I_outer` then requires either two
 independent supplies or a shunt/trim resistor on one leg; scaling within
 that constraint, power grows with the square of current on whichever
-coil's current changes (e.g. `I_center` swept from 2-12.5 A above swings
-center-coil power alone from ~0.9 W to ~35-46 W at fixed `I_outer = 5A`).
+coil's current changes.
+
+## Operating point
+
+Target: **~300 G radially at the channel exit**, tapering toward the
+anode (the magnetic-lens shape `assembly/field_quality.py` scores
+against). The excitation that meets it is **2 A through every coil**,
+turns unchanged at inner 300 / outer 200.
+
+Two independent derivations agree:
+
+- **Lumped reluctance**: 300 G in air needs H = 23.9 kA/m; across the
+  37.4mm inner-core-to-outer-core air path that's ~450-900 A-turns
+  depending on how much of the path holds full field. The iron leg
+  contributes ~2.5 A-turns (227mm at ~0.1 T), i.e. nothing -- this is a
+  gap-dominated circuit.
+- **The solve itself**: at 2 A the measured field is 292 G at the exit
+  plane, peaking at 319 G about 4mm inboard of it.
+
+Pin 300 G *at the exit plane* and you want 2.05 A; pin it as the channel
+*peak* and you want 1.88 A. Either way 2 A is within a few percent, so
+it's the baseline.
+
+For contrast, the previous placeholder was 5 A -- inherited from
+`../matlab/het_solenoid_bfield.m`'s parametric check, never derived from
+a target. That supplies 2500 A-turns, roughly 3x the requirement, and is
+what drove the iron past saturation and made the nonlinear solve
+intractable (see "Nonlinear iron" above).
+
+## Channel ROI
+
+The channel bounds in `assembly_params.txt` (`channel_inner_r`,
+`channel_outer_r`, `channel_y_anode`, `channel_y_exit`) define the **real
+plasma cavity** -- the open annulus between the chamber liner's ceramic
+walls. Confirmed against the CAD: ID 1.74 in, OD 2.5 in, 1.375 in axial
+span, exit at y = -1.25 in, anode end at y = +0.125 in.
+
+This used to be the chamber *part's* bounding annulus (r 17.30-41.44mm,
+y -32.51..+5.59mm) -- i.e. the whole ceramic liner including both walls.
+That is not the plasma channel, and it mattered: that box contained 5392
+iron elements at the exit end, so channel field statistics were averaging
+in pole-face material. Correcting it moved radial purity from 82.5% to
+97.7% and removed a spurious 2.2x jump between adjacent axial stations.
+
+`detect_channel_cavity()` in `build_assembly.py` finds the cavity from
+the chamber geometry so this survives a geometry sweep. Two traps it
+documents, both hit while building it:
+
+- It needs chamber **volume** element centroids, not surface nodes. A
+  surface mesh puts no points inside solid material, so a wall's interior
+  reads identically to open space -- with surface nodes it confidently
+  returned the outer wall's guts (r 31.98-40.94mm) as the "cavity".
+- The detected band must be trimmed clear of the wall faces before
+  locating the closed end, or a fraction of a bin of wall overlap reads
+  as material at every y and collapses the channel to 0.01mm long.
+
+**Known gap**: the detector lands ~0.76mm off the CAD-confirmed bounds
+(it reads centroids, which sit half an element inside the true faces), so
+re-running `build_assembly.py` will overwrite hand-confirmed values with
+slightly shifted ones. Either snap its output to the nearest real chamber
+face or take the channel dimensions as explicit parameters.
 
 ## Whole-assembly STEP import (now the live pipeline)
 
@@ -250,13 +330,24 @@ gone). Findings that carried over from the spike into the real pipeline:
   the true trimmed solid, not boundary-based) are trustworthy and used
   instead.
 
-## Nonlinear iron (B-H curve) -- IN PROGRESS, not yet validated
+## Nonlinear iron (B-H curve) -- converged
 
-Replacing the `mur_iron = 1000` linear placeholder with a real saturating
+Replaced the `mur_iron = 1000` linear placeholder with a real saturating
 B-H curve, since the linear solve was reporting unphysical peak |B|
 (9.7 T under the old geometry, 2.16 T under the new whole-assembly
-geometry at the current placeholder excitation -- both well past where
+geometry at the old placeholder excitation -- both well past where
 real soft iron saturates, ~1.5-2 T).
+
+**The short version of everything below**: two attempts at this failed
+while the excitation was still the inherited 5 A placeholder, and the
+fix turned out not to be a better nonlinear method but a correct
+operating point. At 5 A the poles are driven to 2.16 T, past the B-H
+knee, and no amount of load-stepping made that cheap. At the real
+~300 G design current (2 A) peak iron is 0.86 T, the material is
+effectively linear, and the solve converges in 11 Picard iterations /
+19.6 min / 805 MB with a 2-stage ramp. The debugging history below is
+kept because the failure modes are informative, not because the
+16-stage ramp is still needed.
 
 - **Material**: generic soft steel, using GetDP's own bundled
   `SteelGeneric` dataset (`tools/getdp-3.5.0-Windows64/templates/
@@ -323,31 +414,53 @@ real soft iron saturates, ~1.5-2 T).
   repeated `Generate[]`/`Solve[]` calls this manual iteration loop makes
   (16 stages x up to several iterations each, all against a 589k-DOF
   system) -- plausible but not root-caused.
-- **Status as of this writing**: not yet run to a valid, converged
-  result. The algorithm itself looks sound (4 of 16 stages converged
-  cleanly, no oscillation) -- what's blocking completion is host memory
-  headroom for this many repeated large sparse solves, not the nonlinear
-  method. Next attempt should either free up more system RAM first,
-  reduce the number of repeated Generate/Solve calls (e.g. fewer, coarser
-  stages now that stages up to 40% converge easily -- the fine stepping
-  above 40% was the untested part anyway), or investigate whether GetDP/
-  MUMPS has an explicit factorization-reuse or memory-release option that
-  isn't being used here.
+- **Resolution: the excitation was wrong, not the solver.** Both failures
+  above were chasing a saturation regime the design never called for. A
+  lumped reluctance check against the 300 G channel target (see
+  "Operating point" below) needs ~450-900 A-turns; 5 A was supplying
+  2500. Dropping to 2 A puts peak iron at 0.859 T -- below the knee,
+  where this B-H curve is nearly straight -- and the same formulation,
+  mesh and Picard iteration then converge easily:
+
+  | | 5 A, 16 stages | 2 A, 2 stages |
+  |---|---|---|
+  | Picard iterations | hit caps, oscillated | 11 total, monotonic |
+  | wall time | ~97 min / killed at 53 min | 19.6 min |
+  | peak memory | host dipped to ~4.5 GB free | 805 MB |
+  | peak iron \|B\| | 2.157 T (past knee) | 0.859 T |
+  | result | garbage (6.5 T) / unfinished | converged, rel 9.9e-5 |
+
+  Contraction was clean throughout: stage 0 converged in 3 iterations
+  (50x/28x/24x per step), stage 1 in 8, never oscillating. The host
+  memory pressure that killed the second attempt simply never arises with
+  ~1/8th as many large factorizations.
+- **A useful corollary**: at 0.859 T the nonlinear peak matches a
+  linear-scaled prediction from the old `mur_iron=1000` run to 0.4%.
+  That is not a coincidence -- this is a gap-dominated circuit (iron drop
+  ~2.5 of ~900 A-turns), so the answer is insensitive to iron
+  permeability as long as it's large. Practical consequence:
+  superposition is valid at the design point, so `current_sweep.py`'s
+  cheap 2-basis-solve sweep is trustworthy again.
+- **If a future design point does need saturation**, restore a fine ramp
+  (git history has the 16-stage schedule) and budget accordingly, or
+  switch to full Newton with the `dhdb[]` tangent -- the Picard/
+  load-stepping combination is genuinely slow there.
 
 ## Known limitations / next steps
 - **chamber/injector geometry not in the solve.** Fine for magnetostatics
   (inert, mu_r ~= 1) but would need reintroducing -- with a real inflate/
   clearance-gap fix, not a knife-edge boolean cut -- for any future
   thermal or structural model where their exact shape matters.
-- **Excitation values are placeholders**, not a designed operating point:
-  same turns/current as `../matlab/het_solenoid_bfield.m`'s parametric
-  check (center 300t/5A, outer 200t/5A each, opposite polarity). The
-  current-ratio sweep (see above) confirms this 1:1 current ratio also
-  happens to be the most radial-field point found, but the magnitude (5 A)
-  is still arbitrary -- no discharge-voltage/Larmor-radius requirement has
-  been used to pick it, and the per-wire gauge/resistance/power numbers in
-  "Solenoid winding specs" above are a downstream hand-calc, not something
-  the FEM solve itself models.
+- **Excitation magnitude is now derived, the turns count isn't.** 2 A
+  comes from the 300 G channel-exit target (see "Operating point"), and
+  the 1:1 center/outer ratio is separately the most radial-field point
+  the sweep found. What's still inherited is the 300/200 turns split
+  itself, and the per-wire gauge/resistance/power numbers in "Solenoid
+  winding specs" remain a downstream hand-calc the FEM solve doesn't
+  model. The 300 G target also hasn't been traced back to a
+  discharge-voltage/Larmor-radius requirement for this specific
+  thruster -- `../sizing/basic_het_sizing.py` assumes 150 G for its
+  magnetization check, and reconciling those two numbers is open.
 - **`cross_section_viewer.py` now cuts the mesh exactly**, via
   `pyvista`'s `mesh.slice()` on `assembly_field.vtu` -- a real plane-mesh
   intersection, not an approximation. An earlier version inverse-distance
@@ -365,12 +478,16 @@ real soft iron saturates, ~1.5-2 T).
 - **The vacuum/air region was never missing** -- `Air` already covers
   the whole non-iron, non-winding space (including the channel) and was
   always part of the solve and `b_assembly.pos`. It just didn't *look*
-  present: the channel's real field (~1-30 mT) is ~2-3 orders of
-  magnitude weaker than the saturated iron near the poles (~9.7 T), so
-  sharing one 0-3T color scale made it look empty. `cross_section_viewer
-  .py`'s "region of interest" checkbox fixes the *display*, not the
-  physics: it crops to the channel box and rescales color to a log
-  range fit to the channel's own local |B|, which is what actually
-  reveals the field structure there.
+  present: the channel's real field (~5-32 mT at the design point) is
+  one to two orders of magnitude weaker than the iron near the poles
+  (0.86 T), so sharing one color scale made it look empty.
+  `cross_section_viewer.py`'s "region of interest" checkbox fixes the
+  *display*, not the physics: it crops to the channel box and rescales
+  color to a log range fit to the channel's own local |B|, which is what
+  actually reveals the field structure there. Both that viewer and
+  `post_process.py` now take their full-view color ceiling from the
+  loaded solve rather than a hardcoded constant -- the old fixed 3 T
+  ceiling was sized for the 9.7 T linear era and renders the current
+  0.86 T solve almost entirely black.
 - **Mesh resolution is a single pass**, not refinement-checked -- no
   convergence study yet (compare a coarser/finer mesh's peak/median |B|).

@@ -66,8 +66,11 @@ union blocker gets resolved on the Onshape side.
   Onshape STEP export (all 5 geometry params) rather than a fixed
   hardcoded geometry. Nonlinear iron (generic soft-steel B-H curve,
   replacing the old linear `mur_iron=1000` placeholder) is implemented
-  but not yet confirmed convergent — see `gmsh_getdp/README.md`
-  "Nonlinear iron (B-H curve)". Winding currents are still placeholders.
+  and **converging** — see `gmsh_getdp/README.md` "Nonlinear iron
+  (B-H curve)". Winding excitation is no longer a placeholder: it's
+  sized to the ~300 G channel-exit design target (2 A per coil), which
+  is also what made the nonlinear solve tractable, since the old 5 A
+  placeholder drove the iron past saturation.
 - Top-level thruster sizing (power/thrust/Isp from design targets):
   **working**, standalone, in `sizing/`.
 - Not yet started: wiring `sizing/`'s targets into the CAD dimensions,

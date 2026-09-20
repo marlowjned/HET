@@ -63,6 +63,8 @@ def parse_params(path="assembly_params.txt"):
         channel_outer_r=scalars["channel_outer_r"],
         channel_y_min=scalars["channel_y_min"],
         channel_y_max=scalars["channel_y_max"],
+        channel_y_anode=scalars["channel_y_anode"],
+        channel_y_exit=scalars["channel_y_exit"],
     )
 
 

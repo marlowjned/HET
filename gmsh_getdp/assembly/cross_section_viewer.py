@@ -19,14 +19,18 @@ value where the plane actually crosses it is more correct, not just more
 convenient.
 
 A "region of interest" checkbox switches to a renormalized view cropped
-to the channel: the iron pole faces saturate at ~9.7T (see README/
-HOW_IT_WORKS.md sec. 9) while the channel itself -- the physically
-interesting region, since that's where the field actually acts on the
-plasma -- typically runs ~1-30 mT, three orders of magnitude weaker.
-Sharing one 0-3T color scale between them makes the channel look empty;
-it isn't, it's just invisible next to iron on that scale. ROI mode masks
-out triangles outside the channel box and rescales color (log) to the
-channel's own local |B| range.
+to the channel: the iron carries up to ~0.86 T at the pole faces while
+the channel itself -- the physically interesting region, since that's
+where the field actually acts on the plasma -- runs ~5-32 mT (50-320 G),
+one to two orders of magnitude weaker. Sharing one color scale between
+them makes the channel look empty; it isn't, it's just invisible next to
+iron on that scale. ROI mode masks out triangles outside the channel box
+and rescales color (log) to the channel's own local |B| range.
+
+The channel box itself comes from assembly_params.txt's channel_* entries
+(the real plasma cavity between the chamber's ceramic walls, NOT the
+chamber part's bounding annulus), so correcting the ROI there updates
+both the dashed outline and the ROI crop here without touching this file.
 
 Run: python cross_section_viewer.py  (opens an interactive matplotlib window)
 """
@@ -69,8 +73,13 @@ print(f"Axis=({axis_x:.4f},{axis_z:.4f})  channel r=[{ch_r_in:.4f},{ch_r_out:.4f
 # radius (see HOW_IT_WORKS.md/plan) -- not the full coarse air domain.
 R_MAX = 0.16
 Y_MIN, Y_MAX = -0.06, 0.11
-B_CLIP = 3.0  # T -- see README/HOW_IT_WORKS.md: true peak is ~9.7T, an
-              # artifact of the linear no-saturation iron placeholder.
+# Full-view color ceiling, taken from the loaded solve rather than hardcoded:
+# it used to be a fixed 3.0 T, sized for the old linear no-saturation iron
+# placeholder that peaked near 9.7 T. Now that the excitation is the real
+# ~300 G design point the whole assembly peaks under 1 T, and a fixed 3 T
+# scale renders the entire cross-section black.
+B_CLIP = float(np.percentile(pv_mesh.cell_data["B_magnitude"], 99.5))
+print(f"Full-view color ceiling (99.5th pctl of |B|): {B_CLIP:.3f} T")
 ROI_MARGIN = 1.3  # crop margin around the channel box in ROI mode
 ROI_VMAX_PCTL = 98  # clip ROI color scale at this percentile of in-box |B|,
                      # so one stray high-field element near a pole/winding
@@ -147,7 +156,7 @@ def redraw(theta_deg):
     else:
         vmax = B_CLIP
         norm = None
-        cbar_label = f"|B| (T), clipped at {B_CLIP} T -- see HOW_IT_WORKS.md sec. 9"
+        cbar_label = f"|B| (T), clipped at {B_CLIP:.3f} T (99.5th pctl)"
 
     mesh_artist = ax.tripcolor(triang, facecolors=Bmag, cmap="inferno", norm=norm,
                                 vmin=(None if norm else 0), vmax=(None if norm else vmax), zorder=1)
@@ -173,7 +182,7 @@ def redraw(theta_deg):
     cr, cy, B_r, B_y = cr[quiv_keep], cy[quiv_keep], B_r[quiv_keep], B_y[quiv_keep]
     quiv = ax.quiver(
         cr[::skip], cy[::skip], B_r[::skip], B_y[::skip],
-        color="cyan", scale=(vmax * 10 if roi_on else 30), width=0.0025, alpha=0.8, zorder=5,
+        color="cyan", scale=vmax * 10, width=0.0025, alpha=0.8, zorder=5,
     )
 
     if roi_on:

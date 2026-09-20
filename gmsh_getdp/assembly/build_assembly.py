@@ -83,15 +83,106 @@ CHAMBER_SPACER_NAME = "chamber_spacer"
 CHAMBER_NAME = "chamber"
 COIL_NAMES = {"inner_coil", "outer_coil"}
 
-# Reasonable placeholder excitation, same turns/current as the original
-# pipeline (center/inner 300t/5A, outer 200t/5A), renamed to match the real
-# Onshape/STEP body names. Opposite polarity so flux arcs across the gap
+# Current sized for the ~300 G channel-exit target (field_quality.py's
+# target definition), replacing the inherited 5 A placeholder: a lumped
+# reluctance check (23.9 kA/m across the 37.4mm inner-core-to-outer-core
+# air path, iron drop negligible at ~0.1 T core flux) needs only ~450-900
+# A-turns, vs. the 2500 A-turns 5 A was supplying. The linear FEM sweep
+# agrees independently (channel |B| mean 80.6 mT at 5 A -> 1.86 A for
+# 300 G). Driving 5 A also put peak iron |B| at 2.16 T, past the B-H knee,
+# which is what forced the 16-stage load-stepping the nonlinear solve
+# needed; at 2 A the peak is ~0.86 T and the iron stays effectively linear.
+# Turns unchanged. Opposite polarity so flux arcs across the gap
 # between inner and outer poles instead of just adding axially -- see
 # HOW_IT_WORKS.md sec. 5 for the physical reasoning.
 EXCITATION = {
-    "inner_coil": dict(turns=300, current=5.0, polarity=-1),
-    "outer_coil": dict(turns=200, current=5.0, polarity=+1),
+    "inner_coil": dict(turns=300, current=2.0, polarity=-1),
+    "outer_coil": dict(turns=200, current=2.0, polarity=+1),
 }
+
+
+def detect_channel_cavity(pts, axis_x: float, axis_z: float, bin_m: float = 2.5e-4):
+    """Locate the open plasma cavity inside the chamber's annular ceramic.
+
+    `pts` must be chamber VOLUME element centroids, not surface nodes: a
+    surface mesh puts no points inside solid material, so the interior of a
+    ceramic wall looks identical to open space and this picks the wall
+    instead of the cavity (hit empirically -- it returned r 31.98-40.94mm,
+    the outer wall's interior).
+
+    Taking the chamber's plain min/max radius (what this script did
+    originally) returns the whole part's bounding annulus -- both ceramic
+    walls plus, at the exit end, volume that real iron occupies -- which is
+    NOT the plasma channel: measured on the 2026-09-18 geometry that mask
+    was r 17.30-41.44mm and contained 5392 iron elements, inflating channel
+    field stats by sampling pole material.
+
+    The chamber is a solid of revolution, so classify each radial bin by
+    what fraction of the axial range has material in it: a wall spans
+    nearly the full length, while the cavity has material only where the
+    ceramic floor closes the annulus at the anode end. The cavity is the
+    widest contiguous run of low-axial-coverage bins.
+
+    Returns (r_in, r_out, y_closed, y_open) -- cavity radii, and the axial
+    positions of the closed (anode) and open (exit) ends.
+    """
+    import numpy as np
+
+    r = np.hypot(pts[:, 0] - axis_x, pts[:, 2] - axis_z)
+    y = pts[:, 1]
+    n_r = max(8, int(math.ceil((r.max() - r.min()) / bin_m)))
+    r_edges = np.linspace(r.min(), r.max(), n_r + 1)
+    y_edges = np.linspace(y.min(), y.max(), 21)
+
+    r_idx = np.clip(np.digitize(r, r_edges) - 1, 0, n_r - 1)
+    y_idx = np.clip(np.digitize(y, y_edges) - 1, 0, len(y_edges) - 2)
+    coverage = np.zeros(n_r)
+    for i in range(n_r):
+        sel = r_idx == i
+        coverage[i] = len(np.unique(y_idx[sel])) / (len(y_edges) - 1) if sel.any() else 0.0
+
+    is_cavity = coverage < 0.5
+    best_len, best = 0, None
+    i = 0
+    while i < n_r:
+        if is_cavity[i]:
+            j = i
+            while j < n_r and is_cavity[j]:
+                j += 1
+            if j - i > best_len:
+                best_len, best = j - i, (i, j)
+            i = j
+        else:
+            i += 1
+    assert best is not None and best_len >= 4, (
+        f"no plasma cavity found in the chamber's radial profile (coverage={coverage!r}) -- "
+        f"chamber geometry may not be the expected annular liner"
+    )
+    # Trim edge bins that straddle a wall face: the 0.5 run threshold is
+    # deliberately loose so the run is found at all, but a partially-filled
+    # boundary bin left in would put ceramic inside the "cavity".
+    lo, hi = best
+    while lo < hi - 1 and coverage[lo] > 0.15:
+        lo += 1
+    while hi > lo + 1 and coverage[hi - 1] > 0.15:
+        hi -= 1
+    r_in, r_out = float(r_edges[lo]), float(r_edges[hi])
+
+    # The only chamber material at cavity radii is the floor closing the
+    # annulus; whichever axial end it sits at is the anode, the other is
+    # the open exit. Probe only the middle 60% of the cavity width -- at
+    # the full width a fraction of a bin of wall overlap reads as material
+    # at every y and destroys the result (hit empirically: gave a 0.01mm
+    # long channel).
+    pad = 0.2 * (r_out - r_in)
+    in_cav = (r > r_in + pad) & (r < r_out - pad)
+    assert in_cav.any(), "cavity band contains no chamber nodes -- cannot locate the closed end"
+    y_floor = y[in_cav]
+    if abs(y_floor.mean() - y.max()) < abs(y_floor.mean() - y.min()):
+        y_closed, y_open = float(y_floor.min()), float(y.min())
+    else:
+        y_closed, y_open = float(y_floor.max()), float(y.max())
+    return r_in, r_out, y_closed, y_open
 
 
 def base_name(entity_name: str) -> str:
@@ -338,19 +429,27 @@ def build(params_in: dict, out_dir: str, step_path: str | None,
     # instead of chamber's real ~17mm inner wall).
     occ2.remove([dt for dt in dimtags2 if dt != chamber2], recursive=True)
     occ2.synchronize()
-    gmsh.model.mesh.generate(2)  # surface only -- fast, sufficient for a radius profile
-    _, chamber_node_coords, _ = gmsh.model.mesh.getNodes()
+    # Volume mesh, not just the surface: detect_channel_cavity() needs
+    # points inside solid ceramic to tell a wall's interior from open
+    # space. Size-capped so the ~4mm walls get several elements across.
     import numpy as np
-    chamber_pts = np.array(chamber_node_coords).reshape(-1, 3)
+    gmsh.option.setNumber("Mesh.MeshSizeMax", 0.0015)
+    gmsh.model.mesh.generate(3)
+    node_tags, node_coords, _ = gmsh.model.mesh.getNodes()
+    coord_of = dict(zip(node_tags, np.array(node_coords).reshape(-1, 3)))
+    _, elem_tags, elem_nodes = gmsh.model.mesh.getElements(3)
+    tets = np.array(elem_nodes[0]).reshape(-1, 4)
+    chamber_pts = np.array([[coord_of[n] for n in tet] for tet in tets]).mean(axis=1)
     gmsh.finalize()
 
-    r_local = np.hypot(chamber_pts[:, 0] - axis_x, chamber_pts[:, 2] - axis_z)
-    channel_inner_r = float(r_local.min())
-    channel_outer_r = float(r_local.max())
-    channel_y_min = float(chamber_pts[:, 1].min())
-    channel_y_max = float(chamber_pts[:, 1].max())
-    print(f"\nChannel outline (from chamber geometry): inner_r={channel_inner_r:.4f} "
-          f"outer_r={channel_outer_r:.4f} y=[{channel_y_min:.4f},{channel_y_max:.4f}] "
+    # The plasma cavity, NOT the chamber part's bounding annulus -- see
+    # detect_channel_cavity()'s docstring for why the difference matters.
+    channel_inner_r, channel_outer_r, channel_y_anode, channel_y_exit = \
+        detect_channel_cavity(chamber_pts, axis_x, axis_z)
+    channel_y_min = min(channel_y_anode, channel_y_exit)
+    channel_y_max = max(channel_y_anode, channel_y_exit)
+    print(f"\nChannel cavity (from chamber geometry): inner_r={channel_inner_r:.4f} "
+          f"outer_r={channel_outer_r:.4f} anode_y={channel_y_anode:.4f} exit_y={channel_y_exit:.4f} "
           f"about axis (x={axis_x:.4f}, z={axis_z:.4f})")
 
     params_path = os.path.join(out_dir, "assembly_params.txt")
@@ -367,6 +466,11 @@ def build(params_in: dict, out_dir: str, step_path: str | None,
         f.write(f"channel_outer_r {channel_outer_r!r}\n")
         f.write(f"channel_y_min {channel_y_min!r}\n")
         f.write(f"channel_y_max {channel_y_max!r}\n")
+        # Orientation, so downstream analysis doesn't have to infer which
+        # end is the exit (field_quality.py's anode->exit profile depends
+        # on it, and getting it backwards silently inverts the metric).
+        f.write(f"channel_y_anode {channel_y_anode!r}\n")
+        f.write(f"channel_y_exit {channel_y_exit!r}\n")
     print(f"Wrote {params_path}")
 
     # --- Generate the GetDP region/current-source include file ---------------

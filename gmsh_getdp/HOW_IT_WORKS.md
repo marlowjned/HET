@@ -55,11 +55,12 @@ geometry simple enough to compare against a hand-derivable analytic
 answer (see section 8).
 
 `assembly/build_assembly.py` does the same job on the real BPL-700
-hardware: imports the STEP files, places them with the real per-part
-rotation/translation (ported from `../matlab/new_export/
-apply_transforms.m`), and fuses the 7 real iron parts (top plate, bottom
-plate, center pole, 4 outer poles) into one solid with
-`occ.fuse(iron_tags[0], iron_tags[1:])`.
+hardware: imports a single whole-assembly Onshape STEP export, which
+carries every part's real placement and name already (no hand-maintained
+transform table), and fuses the 7 real iron parts (top plate, bottom
+plate, center pole, 4 outer poles) into one solid — folding them in
+**one at a time**, since fusing them in a single batch call leaves 3
+disjoint solids on this geometry (see `README.md`).
 
 **Why fuse them at all, physically?** In the real hardware these iron
 pieces are bolted/mated together into one continuous magnetic circuit —
@@ -90,9 +91,10 @@ sidesteps.
 
 ### The winding sleeves are a *homogenized* current source, not real wire
 
-`scratch_windings.m`-equivalent logic in `build_assembly.py` builds each
-winding as a solid hollow cylinder (`occ.addCylinder` twice + `occ.cut`),
-not hundreds of individual turns of real wire. This is standard practice:
+The windings come in from the STEP as real coil solids (Onshape exports
+them at the configured ID/OD), and are treated as one smeared-out
+conductor rather than hundreds of individual turns of real wire. This is
+standard practice:
 a coil of `N` turns carrying current `I`, wound tightly enough that
 individual turns are much smaller than the mesh, is magnetically
 equivalent to a solid conductor carrying a smeared-out **bulk current
@@ -118,7 +120,7 @@ equations require:
 - the *tangential* component of `H` to be continuous,
 - the *normal* component of `B` to be continuous.
 
-Between iron (`mu_r=1000`) and air (`mu_r=1`), that means `B` bends
+Between iron (`mu_r` in the thousands) and air (`mu_r=1`), that means `B` bends
 sharply at the boundary — field lines refract, much like light at a
 lens surface, entering the iron nearly along the surface normal
 regardless of the field direction in air (this is *why* iron pole pieces
@@ -169,13 +171,13 @@ its "Generate the GetDP region/current-source include file" section.
 
 ```
 nu[Air]  = 1 / mu0;
-nu[Iron] = 1 / (mur_iron * mu0);
+nu[Iron] = SteelGeneric_nu[$1];   // B-dependent, see section 9
 ```
 
 `nu` (reluctivity) is the magnetic analogue of electrical resistivity —
 literally the coefficient in the governing PDE `curl(nu * curl A) = J`
-from section 1. High `mu_r` (iron, `1000` here — see the caveat in
-section 9) means **low** reluctivity: flux preferentially routes through
+from section 1. High `mu_r` (several thousand for this steel below
+saturation — see section 9) means **low** reluctivity: flux preferentially routes through
 iron rather than air, the same way current preferentially routes through
 a low-resistance wire rather than through free space. This is the entire
 reason the assembly is iron pole pieces shaped a certain way, not an air
@@ -198,9 +200,9 @@ points along the resulting `B` inside the coil. In vector form, that
 azimuthal direction is `(pole axis) x (radial direction from pole axis)`
 — a cross product. GetDP has no built-in cross-product operator, so
 `build_assembly.py` hand-expands it into `X[]`/`Z[]` components (every
-real pole's own axis happens to run along the global Y direction — see
-`TRANSFORMS` in that script — which is what collapses the general 3D
-cross product into just these two components).
+real pole's own axis runs along the global Y direction — confirmed
+directly from the imported geometry, not assumed — which is what
+collapses the general 3D cross product into just these two components).
 
 **The sign is the physically interesting part.** `build_assembly.py`
 picks it so all 4 outer poles produce `B` pointing the same way in global
@@ -303,19 +305,29 @@ represented by first-order edge elements and `curl` of a first-order
 field is zeroth-order/constant per element) and reports summary
 statistics plus a cross-section plot.
 
-The one physics simplification worth flagging every time you look at a
-result: `mur_iron = 1000` in `assembly_regions_generated.pro` is a
-**constant**, but real soft iron isn't linear — its permeability drops
-sharply once `B` exceeds roughly 1.5-2 T (magnetic saturation, atomic
-domains running out of room to align further). This model has no such
-cap, which is exactly why it reports peak `|B|` near 9.7 T in the iron
-(`solve_summary.txt`) — a real core would never reach that; it would
-saturate, its effective `mu_r` would collapse toward 1 in the saturated
-region, and the flux would redistribute elsewhere in response.
+Iron is no longer the `mur_iron = 1000` linear constant this section
+originally described. `generate_regions.py` now assigns a real saturating
+B-H curve (GetDP's bundled `SteelGeneric`), because a constant `mu_r` has
+no saturation cap and was reporting peak `|B|` near 9.7 T — a real core
+would never reach that; it would saturate, its effective `mu_r` would
+collapse toward 1 in the saturated region, and flux would redistribute in
+response. That nonlinearity is why the `.pro`'s Galerkin term is split
+into linear (Air+Windings) and Picard-iterated nonlinear (Iron) parts —
+see `README.md`, "Nonlinear iron (B-H curve)".
 
-Trust this model's field *shape* (where flux concentrates, the general
-pattern across the gap) much more than its peak-field numbers — shape is
-far less sensitive to the linear-vs-nonlinear distinction than the values
-right at the most concentrated hot spots are. Replacing `mur_iron = 1000`
-with a real B-H curve is the next real physics upgrade; GetDP supports it
-via a nonlinear `nu[]` function — see `README.md`.
+The interesting practical result is that, at this thruster's actual
+operating point, it barely matters. The magnetic circuit is
+**gap-dominated**: the iron contributes ~2.5 of the ~900 A-turns needed
+for a 300 G channel field, so the answer is insensitive to iron
+permeability as long as it's large. At the design excitation peak iron
+`|B|` is 0.859 T — below the knee, where the curve is nearly straight —
+and the nonlinear result matches a linear-scaled prediction from the old
+`mur_iron=1000` run to 0.4%.
+
+The general lesson still holds, though: trust this model's field *shape*
+(where flux concentrates, the pattern across the gap) more than its
+peak-field numbers, since shape is far less sensitive to material
+modeling than the values at the most concentrated hot spots are. And if
+an excitation is ever chosen that does push the iron into saturation, the
+nonlinear solve becomes dramatically more expensive — that history is
+documented in `README.md`.

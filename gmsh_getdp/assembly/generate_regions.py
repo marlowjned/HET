@@ -45,9 +45,11 @@ from params_utils import parse_params
 
 MU0 = 4 * math.pi * 1e-7
 
+# Kept in sync with build_assembly.py's EXCITATION -- see its comment for
+# how 2.0 A was derived from the 300 G channel-exit target.
 DEFAULT_EXCITATION = {
-    "inner_coil": dict(turns=300, current=5.0, polarity=-1),
-    "outer_coil": dict(turns=200, current=5.0, polarity=+1),
+    "inner_coil": dict(turns=300, current=2.0, polarity=-1),
+    "outer_coil": dict(turns=200, current=2.0, polarity=+1),
 }
 
 # Generic soft steel B-H curve, verbatim from GetDP's bundled
@@ -138,4 +140,7 @@ def generate_regions_pro(params, excitation, out_path="assembly_regions_generate
 if __name__ == "__main__":
     params = parse_params()
     generate_regions_pro(params, DEFAULT_EXCITATION)
-    print("Wrote assembly_regions_generated.pro (default placeholder excitation, inner 300t/5A vs outer 200t/5A)")
+    desc = " vs ".join(
+        f"{name} {e['turns']}t/{e['current']}A" for name, e in DEFAULT_EXCITATION.items()
+    )
+    print(f"Wrote assembly_regions_generated.pro ({desc})")

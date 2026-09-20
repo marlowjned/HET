@@ -30,7 +30,7 @@ print(f"  |B| overall: max={mag_all.max():.3f} T")
 
 with open("solve_summary.txt", "w") as f:
     f.write("BPL-700 real-CAD magnetostatics solve summary\n")
-    f.write("(linear mur_iron=1000 placeholder, no B-H saturation curve)\n\n")
+    f.write("(nonlinear iron, generic soft-steel B-H curve -- see generate_regions.py)\n\n")
     f.write(f"Iron elements: {len(mag_iron)}\n")
     f.write(f"  max |B|    = {mag_iron.max():.4f} T\n")
     f.write(f"  mean |B|   = {mag_iron.mean():.4f} T\n")
@@ -56,12 +56,18 @@ bx = B_all[mask, 0]
 bz = B_all[mask, 2]
 bmag = mag_all[mask]
 
+# Color ceiling from the data, not a hardcoded 3 T: that constant was sized
+# for the old linear no-saturation iron placeholder (peak ~9.7 T). At the
+# real ~300 G design excitation the whole assembly peaks under 1 T and a
+# fixed 3 T scale renders the plot black.
+b_clip = float(np.percentile(mag_all, 99.5))
 fig, ax = plt.subplots(figsize=(8, 8))
-sc = ax.scatter(x, z, c=np.clip(bmag, 0, 3.0), cmap="inferno", s=3, vmin=0, vmax=3.0)
+sc = ax.scatter(x, z, c=np.clip(bmag, 0, b_clip), cmap="inferno", s=3, vmin=0, vmax=b_clip)
 skip = max(1, len(x) // 400)
-ax.quiver(x[::skip], z[::skip], bx[::skip], bz[::skip], color="cyan", scale=40, width=0.002, alpha=0.7)
+ax.quiver(x[::skip], z[::skip], bx[::skip], bz[::skip], color="cyan",
+          scale=b_clip * 13.3, width=0.002, alpha=0.7)
 cb = fig.colorbar(sc, ax=ax)
-cb.set_label("|B| (T), clipped at 3 T")
+cb.set_label(f"|B| (T), clipped at {b_clip:.3f} T (99.5th pctl)")
 ax.set_xlabel("x (m)")
 ax.set_ylabel("z (m)")
 ax.set_title(f"BPL-700 real-CAD |B| cross-section (y={cy:.4f}, slab={2*slab*1e3:.0f}mm)")

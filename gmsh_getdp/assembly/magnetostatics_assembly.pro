@@ -52,12 +52,17 @@
 
 Include "assembly_regions_generated.pro";
 
-// RampFrac(): non-uniform load-stepping schedule, finer above 40% where
-// the first attempt's convergence rate started visibly slowing down (see
-// comment above) -- 16 stages instead of 8, denser near saturation.
+// RampFrac(): load-stepping schedule. Cut from 16 stages to 2 once the
+// excitation was resized to the real 300 G channel target (2 A, see
+// build_assembly.py's EXCITATION): at that current peak iron |B| is
+// ~0.86 T, below the B-H knee, so the iron is effectively linear and the
+// steep-slope problem the long ramp existed to survive doesn't arise.
+// The 0.5 stage is cheap insurance, not a requirement -- a single
+// cold-start solve is expected to converge too. If the excitation is ever
+// raised back into saturation, restore a fine ramp (git history has the
+// 16-stage schedule) or switch to Newton.
 Function {
-  RampFrac() = {0.1, 0.2, 0.3, 0.4, 0.45, 0.5, 0.55, 0.6,
-                0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0};
+  RampFrac() = {0.5, 1.0};
 }
 
 DefineConstant[
