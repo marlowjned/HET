@@ -101,13 +101,34 @@ equivalent to a solid conductor carrying a smeared-out **bulk current
 density**
 
 ```
-J = N * I / A_cross          (A/m^2, A_cross = coil's cross-sectional area)
+J = N * I / A_cross
 ```
 
-flowing azimuthally around the pole axis. Meshing every real turn would
-be enormously more expensive for no accuracy gain at this scale — see
-section 5 for how that current density is actually built into the
-GetDP source term.
+flowing azimuthally around the pole axis.
+
+**`A_cross` here is the coil's r-z section — radial thickness × height —
+not the annulus `π(r_o² − r_i²)`.** This distinction is the whole game,
+and getting it wrong is subtle enough that it survived in this repo for
+months: since the current runs *azimuthally*, every turn crosses a plane
+that *contains* the axis, so that rectangle is the surface the total
+`N·I` passes through. The annulus is the cross-section for current
+flowing *along* the axis, which is not what a solenoid does. On these
+coils the annulus is 1.8–1.9× larger, so using it applies roughly half
+the intended ampere-turns while looking entirely reasonable.
+
+`build_assembly.py` gets this area from Pappus's theorem
+(`A = V / 2πr_mean`) using the solid's own volume, rather than from
+nominal dimensions, so it stays right for the small fillets real CAD
+coils carry.
+
+Meshing every real turn would be enormously more expensive for no
+accuracy gain at this scale — see section 5 for how that current density
+is actually built into the GetDP source term.
+
+Note that the packing factor never appears. The homogenized conductor
+fills the whole coil envelope; copper fraction affects the coil's
+*resistance*, and therefore the supply voltage and dissipation, but not
+the field. Only `N·I` and the envelope matter magnetically.
 
 ### Fragmenting everything together
 
@@ -293,9 +314,20 @@ B(0) = (mu0 * J / 2) * integral over the coil's r,z extent of
 radial wall thickness, not the textbook infinitely-thin-shell
 approximation, which would be a bad match for this coil's proportions:
 its radial wall thickness is comparable to its mean radius). The FEM
-result (10.05 mT) landing within 1.4% of this exact integral (10.19 mT)
+result (27.63 mT) landing within 1.4% of this exact integral (28.02 mT)
 is the actual evidence that sections 1, 4, 5, 6, and 7 above are all
 correctly implemented — not just "the solver ran without errors."
+
+**But note what this check can and cannot see.** For a long time it read
+10.05 mT against 10.19 mT — the same 1.4% agreement — because
+`build_toy.py` fed the same wrong `A_cross` (section 2) into *both* the
+FEM source term and this analytic reference. Two numbers computed from a
+shared bad input will agree with each other no matter how wrong they
+are. The check validates the discretization: mesh, gauge, formulation,
+boundary treatment. It is structurally blind to anything upstream of `J`.
+`check_toy.py` now asserts this comparison and exits non-zero on failure,
+which is the part that was missing — a validation you never run, or that
+cannot fail, is documentation rather than a test.
 
 ## 9. Reading the result, and where the model is still a simplification
 
@@ -320,7 +352,7 @@ operating point, it barely matters. The magnetic circuit is
 **gap-dominated**: the iron contributes ~2.5 of the ~900 A-turns needed
 for a 300 G channel field, so the answer is insensitive to iron
 permeability as long as it's large. At the design excitation peak iron
-`|B|` is 0.859 T — below the knee, where the curve is nearly straight —
+`|B|` is 0.875 T — below the knee, where the curve is nearly straight —
 and the nonlinear result matches a linear-scaled prediction from the old
 `mur_iron=1000` run to 0.4%.
 

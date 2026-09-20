@@ -14,11 +14,13 @@ read results back), not the numerical engine.
 - **Toy validation**: done and passing. `toy_test/` builds a single
   parametric solenoid coil (same dimensions as
   `../matlab/het_solenoid_bfield.m`'s center coil) and solves it with
-  GetDP's magnetic-vector-potential formulation. Result: 10.05 mT on-axis
-  at coil center, vs. 10.19 mT from the exact analytic on-axis integral
+  GetDP's magnetic-vector-potential formulation. Result: 27.63 mT on-axis
+  at coil center, vs. 28.02 mT from the exact analytic on-axis integral
   for a finite thick solenoid (1.4% agreement) -- confirms the mesh,
   formulation, and gauge are all correct before trusting them on the real
-  CAD.
+  CAD. Run `python check_toy.py` after the solve: it asserts the
+  comparison rather than leaving it as a number quoted here, which is what
+  let a real error hide for months -- see "The A_cross bug" below.
 - **Real assembly**: done and solving, now sourced from a **whole-assembly
   Onshape STEP export** (via `../onshape/cache.py`) rather than the
   original per-part-STEP + hardcoded-transform approach. `assembly/
@@ -43,18 +45,19 @@ read results back), not the numerical engine.
   field at `I_center = I_outer` -- see "Current ratio sweep" below. **Its
   2-basis-solve superposition trick assumes a linear material**, which
   looked fatal once Iron became nonlinear -- but at the real ~300 G design
-  point the iron peaks at 0.86 T, well below the B-H knee, so it behaves
+  point the iron peaks at 0.875 T, well below the B-H knee, so it behaves
   linearly and the trick is valid again there (confirmed: the nonlinear
   peak matches a linear-scaled prediction to 0.4%). Re-check that if a
   future design point pushes the iron toward saturation.
 - **Materials**: nonlinear iron (generic soft-steel B-H curve) replaces
-  the `mur_iron = 1000` linear placeholder, and **converges** -- 11
-  Picard iterations, 19.6 min wall, 805 MB peak. See "Nonlinear iron
+  the `mur_iron = 1000` linear placeholder, and **converges** -- 12
+  Picard iterations, 28 min wall, 806 MB peak. See "Nonlinear iron
   (B-H curve)" below for how the excitation, not the method, was what
   made that work.
-- **Excitation**: 2 A per coil (inner 300 t, outer 200 t), sized to the
-  ~300 G channel-exit target rather than inherited from the old MATLAB
-  check. Measured 292 G at the exit plane. See "Operating point" below.
+- **Excitation**: 1.25 A per coil (inner 260 t, outer 165 t) -- a real
+  winding design sized to the ~300 G channel-exit target, not the old
+  inherited 300/200 at 5 A. Measured 300 G at the exit plane. See
+  "Operating point" below.
 - **Channel ROI**: the channel bounds in `assembly_params.txt` are the
   real plasma cavity between the chamber's ceramic walls, not the chamber
   part's bounding annulus (which contained iron). See "Channel ROI" below.
@@ -79,7 +82,7 @@ pip install gmsh meshio pyvista        # geometry/meshing API, VTK export, VTK-b
 cd toy_test
 python build_toy.py
 "../../tools/getdp-3.5.0-Windows64/getdp.exe" magnetostatics_toy.pro -msh toy.msh -solve Res_a -pos Map_b
-# check b_center.txt against the printed B_ideal
+python check_toy.py                             # asserts the FEM against the exact analytic field; exits non-zero on failure
 
 cd ../assembly
 python build_assembly.py                       # writes assembly.msh + assembly_regions_generated.pro + assembly_params.txt
@@ -179,66 +182,13 @@ here), and the underlying solve is the linear/no-saturation placeholder
 -- though see "Nonlinear iron" above for why superposition turns out to
 be legitimate at the real design point anyway.
 
-## Solenoid winding specs (current configuration)
-
-Geometry from `assembly/build_assembly.py` (winding sleeve dims) and
-`assembly/generate_regions.py`/`assembly_params.txt` (turns/current
-excitation). The solve itself only ever uses a bulk current density
-(`turns * current / A_cross`, ../gmsh_getdp/HOW_IT_WORKS.md sec. 9) --
-it has no notion of individual wire strands -- so the per-wire numbers
-below (gauge, resistance, voltage, power) are **not part of the FEM
-model**; they're a separate hand-calc, assuming round AWG 12 magnet wire
-(2.053 mm bare copper diameter) and copper resistivity at two reference
-temperatures, added here to size the actual coil/power supply.
-
-| | outer coil (x4) | center coil |
-|---|---|---|
-| ID / OD | 35.76 / 51.76 mm | 35.76 / 57.20 mm |
-| winding height | 86.4 mm | 91.0 mm |
-| window cross-section | 1099.8 mm^2 | 1565.3 mm^2 |
-| turns | 200 | 300 |
-| mean turn length | 137.5 mm | 146.0 mm |
-| total wire length | 27.5 m | 43.8 m |
-| assumed wire | AWG 12 (2.053 mm dia, 3.31 mm^2) | AWG 12 (same) |
-| implied packing factor | 60.2% | 63.4% |
-| resistance @ 20 C | 139.5 mOhm | 222.3 mOhm |
-| resistance @ 100 C (est. operating) | 183.4 mOhm | 292.2 mOhm |
-
-AWG 12 is a guess, not a spec -- but it's notable that it lands at a
-plausible 60-63% packing factor (round wire in a wound coil tops out
-around 78-91% theoretical, 60-75% is normal once insulation and
-hand-winding slack are counted) in **both** windings despite their
-different turn counts and window areas, which is at least consistent
-with one wire gauge being used for the whole coil set rather than
-suggesting a modeling error.
-
-At the design operating point (`I_center = I_outer = 2 A`, see "Operating
-point" below -- the 1:1 ratio is also the most radial-field ratio found
-in the sweep above):
-
-| | outer coil (each) | center coil | total (1 center + 4 outer) |
-|---|---|---|---|
-| voltage @ 20 C | 0.28 V | 0.44 V | -- |
-| voltage @ 100 C | 0.37 V | 0.58 V | -- |
-| power @ 20 C | 0.56 W | 0.89 W | 3.1 W |
-| power @ 100 C | 0.73 W | 1.17 W | 4.1 W |
-
-If all 5 coils are wired in series on one supply at this operating point
-(same 2 A through all of them, true only at this 1:1 ratio), the whole
-magnet circuit needs **~1.6-2.1 V at 2 A, ~3-4 W total** depending on
-winding temperature -- a trivially small bench-supply load, nothing like
-the discharge (anode) supply. Moving off the 1:1 ratio breaks the series
-assumption, since `I_center != I_outer` then requires either two
-independent supplies or a shunt/trim resistor on one leg; scaling within
-that constraint, power grows with the square of current on whichever
-coil's current changes.
-
 ## Operating point
 
 Target: **~300 G radially at the channel exit**, tapering toward the
 anode (the magnetic-lens shape `assembly/field_quality.py` scores
-against). The excitation that meets it is **2 A through every coil**,
-turns unchanged at inner 300 / outer 200.
+against). The design point that meets it is **325 A-turns on the inner
+pole and 206 on each outer pole** -- realized as 260 / 165 turns at
+1.25 A, wired in series.
 
 Two independent derivations agree:
 
@@ -247,18 +197,92 @@ Two independent derivations agree:
   depending on how much of the path holds full field. The iron leg
   contributes ~2.5 A-turns (227mm at ~0.1 T), i.e. nothing -- this is a
   gap-dominated circuit.
-- **The solve itself**: at 2 A the measured field is 292 G at the exit
-  plane, peaking at 319 G about 4mm inboard of it.
+- **The solve itself**: 307.6 G at the exit plane at 1.28 A, peaking at
+  328.8 G about 3.5mm inboard of it. Scaling to 300 G gives 1.25 A.
 
-Pin 300 G *at the exit plane* and you want 2.05 A; pin it as the channel
-*peak* and you want 1.88 A. Either way 2 A is within a few percent, so
-it's the baseline.
-
-For contrast, the previous placeholder was 5 A -- inherited from
-`../matlab/het_solenoid_bfield.m`'s parametric check, never derived from
-a target. That supplies 2500 A-turns, roughly 3x the requirement, and is
+For contrast, the original placeholder was 5 A at 300/200 turns,
+inherited from `../matlab/het_solenoid_bfield.m`'s parametric check and
+never derived from a target. That is ~3x the required A-turns, and is
 what drove the iron past saturation and made the nonlinear solve
 intractable (see "Nonlinear iron" above).
+
+## Solenoid winding design
+
+Only the **A-turn product** reaches the FEM (as a bulk current density,
+see HOW_IT_WORKS.md sec. 2), so the wire choice below changes the
+current/voltage split and nothing about the field. Every row delivers the
+same 325/206 A-turns and therefore the same 300 G.
+
+Windows measured from the real CAD coil solids: **4.76 x 50.8 mm**
+(inner) and **6.35 x 50.8 mm** (outer); mean turn lengths 94.8 and
+99.7 mm. Turn counts assume fiberglass-served wire, hexagonally nested,
+with the inner coil wound full and the outer coils wound to 0.63x that so
+one series current gives the 1.58 A-turn ratio the field wants.
+
+| AWG | N inner | N outer | layers in/out | current | V @ 20 C | V @ 60 C | total P |
+|---|---|---|---|---|---|---|---|
+| 16 | 105 | 67 | 3 / 2 | 3.10 A | 1.46 V | 1.69 V | 5.2 W |
+| 18 | 172 | 109 | 4 / 3 | 1.89 A | 2.30 V | 2.67 V | 5.0 W |
+| **20** | **260** | **165** | **5 / 4** | **1.25 A** | **3.67 V** | **4.25 V** | **5.3 W** |
+| 22 | 384 | 244 | 6 / 4 | 0.85 A | 5.84 V | 6.76 V | 5.7 W |
+| 24 | 624 | 396 | 8 / 6 | 0.52 A | 9.26 V | 10.72 V | 5.6 W |
+
+AWG 20 is what `build_assembly.py`'s `EXCITATION` is set to. Switching
+rows needs no re-solve -- just the turns/current pair.
+
+**Dissipation is ~5 W in every row**, which is the useful structural
+result here:
+
+```
+P = (N*I)^2 * rho * L_turn / (k * A_window)
+```
+
+Wire gauge cancels: thinner wire raises resistance exactly as fast as the
+lower current reduces I^2. The only levers on heat are window area,
+packing factor, turn length, and the A-turn requirement itself. Choosing
+a gauge is a power-supply matching decision, not a thermal one.
+
+Conductor current density is 2.4-2.7 A/mm^2 across the table --
+comfortable even with vacuum/radiation-only cooling. A standalone
+radiation balance (all 5 W leaving a ~0.070 m^2 envelope by radiation
+alone, no conduction path) puts the assembly at roughly 42-60 C depending
+on surface emissivity, so the magnet circuit is not thermally
+interesting on its own.
+
+**Soft inputs**: the insulated-diameter figures are representative of
+single glass serving rather than taken from a datasheet, and they set the
+turn counts -- a real wire spec could move N by 10-20%, which moves the
+current, not the field or the power. Wiring in series is what forces
+equal current through coils of unequal resistance; running the coils at
+different currents needs two supplies or a trim resistor on one leg.
+
+## The A_cross bug (fixed 2026-09-19, worth knowing about)
+
+Both `build_assembly.py` and `build_toy.py` computed the winding's
+current-density area as the **annulus**, `pi*(ro^2 - ri^2)`. The current
+is azimuthal, so it crosses a plane *containing* the axis: the correct
+area is the coil's r-z section (radial thickness x height). The annulus
+is the area for *axial* flow, and it is 1.84x (inner) / 1.94x (outer) too
+large here, so every solve silently applied about half its nameplate
+A-turns. The toy case was 2.75x off.
+
+**The toy validation could not catch it**, because `build_toy.py` fed the
+same wrong area into both the FEM source term and its analytic reference.
+The two agreed to 1.4% at 10.19 mT while the true answer was 28.02 mT --
+a comparison that cannot fail is not a validation. That is why
+`check_toy.py` now exists and asserts, and why `A_cross` is derived via
+Pappus's theorem (`A = V / 2*pi*r_mean`) from the solid's own volume
+rather than from nominal dimensions.
+
+Second-order lesson from the same fix: `magnetostatics_toy.pro` held a
+hand-copied `Jmag` literal, so the first corrected re-solve silently
+reused the old value. It now `Include`s a file `build_toy.py` generates,
+matching how the assembly pipeline already worked.
+
+Everything *shape*-based from before the fix survived it -- the ROI work,
+the lens profile, radial purity, the saturation conclusion -- because a
+scalar error in J rescales the field without changing its geometry. What
+changed is the label on the current axis.
 
 ## Channel ROI
 
@@ -343,9 +367,9 @@ while the excitation was still the inherited 5 A placeholder, and the
 fix turned out not to be a better nonlinear method but a correct
 operating point. At 5 A the poles are driven to 2.16 T, past the B-H
 knee, and no amount of load-stepping made that cheap. At the real
-~300 G design current (2 A) peak iron is 0.86 T, the material is
-effectively linear, and the solve converges in 11 Picard iterations /
-19.6 min / 805 MB with a 2-stage ramp. The debugging history below is
+~300 G design current (1.25 A, 325/206 A-turns) peak iron is 0.875 T,
+the material is effectively linear, and the solve converges in 12 Picard
+iterations / 28 min / 806 MB with a 2-stage ramp. The debugging history below is
 kept because the failure modes are informative, not because the
 16-stage ramp is still needed.
 
@@ -418,23 +442,23 @@ kept because the failure modes are informative, not because the
   above were chasing a saturation regime the design never called for. A
   lumped reluctance check against the 300 G channel target (see
   "Operating point" below) needs ~450-900 A-turns; 5 A was supplying
-  2500. Dropping to 2 A puts peak iron at 0.859 T -- below the knee,
+  2500. Dropping to the real design A-turns puts peak iron at 0.875 T -- below the knee,
   where this B-H curve is nearly straight -- and the same formulation,
   mesh and Picard iteration then converge easily:
 
-  | | 5 A, 16 stages | 2 A, 2 stages |
+  | | 5 A placeholder, 16 stages | design point, 2 stages |
   |---|---|---|
-  | Picard iterations | hit caps, oscillated | 11 total, monotonic |
-  | wall time | ~97 min / killed at 53 min | 19.6 min |
-  | peak memory | host dipped to ~4.5 GB free | 805 MB |
-  | peak iron \|B\| | 2.157 T (past knee) | 0.859 T |
+  | Picard iterations | hit caps, oscillated | 12 total, monotonic |
+  | wall time | ~97 min / killed at 53 min | 28 min |
+  | peak memory | host dipped to ~4.5 GB free | 806 MB |
+  | peak iron \|B\| | 2.157 T (past knee) | 0.875 T |
   | result | garbage (6.5 T) / unfinished | converged, rel 9.9e-5 |
 
   Contraction was clean throughout: stage 0 converged in 3 iterations
-  (50x/28x/24x per step), stage 1 in 8, never oscillating. The host
+  (48x/27x/23x per step), stage 1 in 9, never oscillating. The host
   memory pressure that killed the second attempt simply never arises with
   ~1/8th as many large factorizations.
-- **A useful corollary**: at 0.859 T the nonlinear peak matches a
+- **A useful corollary**: at 0.875 T the nonlinear peak matches a
   linear-scaled prediction from the old `mur_iron=1000` run to 0.4%.
   That is not a coincidence -- this is a gap-dominated circuit (iron drop
   ~2.5 of ~900 A-turns), so the answer is insensitive to iron
@@ -451,16 +475,15 @@ kept because the failure modes are informative, not because the
   (inert, mu_r ~= 1) but would need reintroducing -- with a real inflate/
   clearance-gap fix, not a knife-edge boolean cut -- for any future
   thermal or structural model where their exact shape matters.
-- **Excitation magnitude is now derived, the turns count isn't.** 2 A
-  comes from the 300 G channel-exit target (see "Operating point"), and
-  the 1:1 center/outer ratio is separately the most radial-field point
-  the sweep found. What's still inherited is the 300/200 turns split
-  itself, and the per-wire gauge/resistance/power numbers in "Solenoid
-  winding specs" remain a downstream hand-calc the FEM solve doesn't
-  model. The 300 G target also hasn't been traced back to a
-  discharge-voltage/Larmor-radius requirement for this specific
-  thruster -- `../sizing/basic_het_sizing.py` assumes 150 G for its
-  magnetization check, and reconciling those two numbers is open.
+- **The excitation is derived now; the 300 G target itself isn't.** Both
+  the A-turns and the turns/current split come from the field requirement
+  plus the real coil windows (see "Operating point" and "Solenoid winding
+  design"). What has *not* been traced back to first principles is the
+  300 G number -- `../sizing/basic_het_sizing.py` assumes 150 G for its
+  magnetization check, and reconciling those two is open. The per-wire
+  resistance/voltage/power figures also remain a hand-calc the FEM
+  doesn't model, and rest on representative rather than datasheet
+  insulated-wire diameters.
 - **`cross_section_viewer.py` now cuts the mesh exactly**, via
   `pyvista`'s `mesh.slice()` on `assembly_field.vtu` -- a real plane-mesh
   intersection, not an approximation. An earlier version inverse-distance

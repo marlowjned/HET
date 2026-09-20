@@ -20,12 +20,16 @@ Group {
   Domain   = Region[{DomainC, DomainCC}];
 }
 
+Include "toy_source_generated.pro";   // Jmag, written by build_toy.py
+
 Function {
   mu0 = 4*Pi*1e-7;
   nu[Air]  = 1/mu0;
   nu[Coil] = 1/mu0;
 
-  Jmag = 5.638644e+05;  // A/m^2, from build_toy.py (turns*current/A_cross)
+  // Jmag comes from build_toy.py via the generated include below -- it used
+  // to be a hand-copied literal here, which meant changing the source term
+  // in build_toy.py silently left the solve running the old value.
   Js[Coil] = (Jmag / Sqrt[X[]^2 + Y[]^2]) * Vector[-Y[], X[], 0];
 }
 

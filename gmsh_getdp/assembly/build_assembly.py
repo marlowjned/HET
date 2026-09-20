@@ -95,20 +95,34 @@ COIL_NAMES = {"inner_coil", "outer_coil"}
 # Turns unchanged. Opposite polarity so flux arcs across the gap
 # between inner and outer poles instead of just adding axially -- see
 # HOW_IT_WORKS.md sec. 5 for the physical reasoning.
+# Turns are a real winding design now, not the inherited 300/200 placeholder:
+# AWG 20 single-glass-served wire fills the inner window at 260 turns (5
+# layers of 52), and the outer coils are wound to 165 so that one series
+# current gives the ~1.58 A-turn ratio the field wants. Only the A-turn
+# product reaches the solve, so a different gauge from the same trade study
+# changes the current/voltage split without changing the field at all.
 EXCITATION = {
-    "inner_coil": dict(turns=300, current=2.0, polarity=-1),
-    "outer_coil": dict(turns=200, current=2.0, polarity=+1),
+    "inner_coil": dict(turns=260, current=1.25, polarity=-1),
+    "outer_coil": dict(turns=165, current=1.25, polarity=+1),
 }
 
 
-def detect_channel_cavity(pts, axis_x: float, axis_z: float, bin_m: float = 2.5e-4):
+def detect_channel_cavity(centroids, nodes, axis_x: float, axis_z: float,
+                           bin_m: float = 2.5e-4):
     """Locate the open plasma cavity inside the chamber's annular ceramic.
 
-    `pts` must be chamber VOLUME element centroids, not surface nodes: a
-    surface mesh puts no points inside solid material, so the interior of a
-    ceramic wall looks identical to open space and this picks the wall
-    instead of the cavity (hit empirically -- it returned r 31.98-40.94mm,
-    the outer wall's interior).
+    Takes both halves of the same chamber volume mesh, because the two
+    steps need different things:
+
+    - `centroids` (volume element centroids) CLASSIFY which radial band is
+      the cavity. This step needs points inside solid material, so surface
+      nodes can't do it: a surface mesh puts nothing inside a wall, making
+      the wall's interior look identical to open space -- with surface
+      nodes this confidently returned r 31.98-40.94mm, the outer wall's
+      guts, as the "cavity".
+    - `nodes` (the same mesh's nodes) then MEASURE the bounds, because
+      centroids sit half an element inside the true faces and bias every
+      bound inward by ~0.2-0.3mm at a 1.5mm element size.
 
     Taking the chamber's plain min/max radius (what this script did
     originally) returns the whole part's bounding annulus -- both ceramic
@@ -128,8 +142,10 @@ def detect_channel_cavity(pts, axis_x: float, axis_z: float, bin_m: float = 2.5e
     """
     import numpy as np
 
-    r = np.hypot(pts[:, 0] - axis_x, pts[:, 2] - axis_z)
-    y = pts[:, 1]
+    r = np.hypot(centroids[:, 0] - axis_x, centroids[:, 2] - axis_z)
+    y = centroids[:, 1]
+    rn = np.hypot(nodes[:, 0] - axis_x, nodes[:, 2] - axis_z)
+    yn = nodes[:, 1]
     n_r = max(8, int(math.ceil((r.max() - r.min()) / bin_m)))
     r_edges = np.linspace(r.min(), r.max(), n_r + 1)
     y_edges = np.linspace(y.min(), y.max(), 21)
@@ -166,22 +182,36 @@ def detect_channel_cavity(pts, axis_x: float, axis_z: float, bin_m: float = 2.5e
         lo += 1
     while hi > lo + 1 and coverage[hi - 1] > 0.15:
         hi -= 1
-    r_in, r_out = float(r_edges[lo]), float(r_edges[hi])
+    r_in_approx, r_out_approx = float(r_edges[lo]), float(r_edges[hi])
 
-    # The only chamber material at cavity radii is the floor closing the
-    # annulus; whichever axial end it sits at is the anode, the other is
-    # the open exit. Probe only the middle 60% of the cavity width -- at
-    # the full width a fraction of a bin of wall overlap reads as material
-    # at every y and destroys the result (hit empirically: gave a 0.01mm
-    # long channel).
-    pad = 0.2 * (r_out - r_in)
-    in_cav = (r > r_in + pad) & (r < r_out - pad)
+    # Axial bounds first. The only chamber material at cavity radii is the
+    # floor closing the annulus; whichever axial end it sits at is the
+    # anode, the other is the open exit. Probe only the middle 60% of the
+    # cavity width -- at the full width a fraction of a bin of wall overlap
+    # reads as material at every y and destroys the result (hit
+    # empirically: gave a 0.01mm long channel).
+    pad = 0.2 * (r_out_approx - r_in_approx)
+    in_cav = (rn > r_in_approx + pad) & (rn < r_out_approx - pad)
     assert in_cav.any(), "cavity band contains no chamber nodes -- cannot locate the closed end"
-    y_floor = y[in_cav]
-    if abs(y_floor.mean() - y.max()) < abs(y_floor.mean() - y.min()):
-        y_closed, y_open = float(y_floor.min()), float(y.min())
+    y_floor = yn[in_cav]
+    if abs(y_floor.mean() - yn.max()) < abs(y_floor.mean() - yn.min()):
+        y_closed, y_open = float(y_floor.min()), float(yn.min())
     else:
-        y_closed, y_open = float(y_floor.max()), float(y.max())
+        y_closed, y_open = float(y_floor.max()), float(yn.max())
+
+    # Then the cavity radii, exactly. Nodes lie ON the ceramic faces, and in
+    # the half of the channel clear of the floor the cavity is strictly
+    # empty -- so the inner wall's outer face is simply the largest node
+    # radius below the cavity, and the outer wall's inner face the smallest
+    # above it. (Mode-of-histogram snapping was tried here first and lands
+    # ~0.15mm off: face nodes aren't dense enough at this element size to
+    # dominate a histogram bin.)
+    r_mid = 0.5 * (r_in_approx + r_out_approx)
+    span = y_closed - y_open
+    open_half = ((yn - y_open) / span) < 0.5
+    below, above = open_half & (rn < r_mid), open_half & (rn > r_mid)
+    assert below.any() and above.any(), "cannot bracket the cavity radii on the open side"
+    r_in, r_out = float(rn[below].max()), float(rn[above].min())
     return r_in, r_out, y_closed, y_open
 
 
@@ -271,19 +301,30 @@ def build(params_in: dict, out_dir: str, step_path: str | None,
         height = ymax - ymin
         id_in = params_in["inner_coil_id"] if name == "inner_coil" else params_in["outer_coil_id"]
         od_in = params_in["inner_coil_od"] if name == "inner_coil" else params_in["outer_coil_od"]
-        A_cross = math.pi * (((od_in * INCH_TO_M) / 2) ** 2 - ((id_in * INCH_TO_M) / 2) ** 2)
+        r_in_m, r_out_m = id_in * INCH_TO_M / 2, od_in * INCH_TO_M / 2
+        r_mean = (r_in_m + r_out_m) / 2
         vol = occ.getMass(d, t)
-        vol_expected = A_cross * height
-        # 5% tolerance, not tighter: real CAD coil solids carry small edge
-        # fillets/rounds the ideal-annulus formula doesn't capture (~1%
-        # discrepancy observed on the real geometry) -- this check is a
-        # sanity check on the constant-cross-section/axis-along-Y
-        # assumption, not a precision validation (A_cross itself always
-        # comes from the exact analytic id/od values, not this measurement).
-        assert abs(vol - vol_expected) / vol_expected < 0.05, (
-            f"winding{i} ({name}) volume ({vol:.6e}) doesn't match the analytic annulus "
-            f"volume from id={id_in}in/od={od_in}in ({vol_expected:.6e}) -- not a simple "
-            f"constant-cross-section extrusion along Y as assumed"
+
+        # A_cross is the cross-section the winding current actually crosses:
+        # the coil's r-y section (radial thickness x height), NOT the annulus
+        # pi*(ro^2-ri^2). Current here is AZIMUTHAL, so it passes through a
+        # plane CONTAINING the axis; the annulus is the area for axial flow
+        # and is ~1.8-1.9x too large on these coils, which silently applied
+        # about half the intended ampere-turns. (The toy validation could not
+        # catch this: build_toy.py fed the same wrong area into both the FEM
+        # and its "analytic" reference, so the two agreed at 10.19 mT when
+        # the true answer was 28.02 mT.)
+        #
+        # Taken via Pappus's theorem (V = 2*pi*r_centroid*A) rather than
+        # dr*height: it needs only getMass(), a true volume integral, and it
+        # stays correct for the small edge fillets the real CAD coils carry,
+        # which a nominal dr*height misses by ~1%.
+        A_cross = vol / (2 * math.pi * r_mean)
+        A_nominal = (r_out_m - r_in_m) * height
+        assert abs(A_cross - A_nominal) / A_nominal < 0.05, (
+            f"winding{i} ({name}) section area from Pappus ({A_cross:.6e}) disagrees with "
+            f"the nominal (od-id)/2 * height ({A_nominal:.6e}) by more than 5% -- the solid "
+            f"is probably not the constant-section ring about Y that this assumes"
         )
         cx, _, cz = occ.getCenterOfMass(d, t)
         winding_meta.append(dict(index=i, pole=name, A_cross=A_cross, loc=(cx, cz)))
@@ -436,7 +477,8 @@ def build(params_in: dict, out_dir: str, step_path: str | None,
     gmsh.option.setNumber("Mesh.MeshSizeMax", 0.0015)
     gmsh.model.mesh.generate(3)
     node_tags, node_coords, _ = gmsh.model.mesh.getNodes()
-    coord_of = dict(zip(node_tags, np.array(node_coords).reshape(-1, 3)))
+    chamber_nodes = np.array(node_coords).reshape(-1, 3)
+    coord_of = dict(zip(node_tags, chamber_nodes))
     _, elem_tags, elem_nodes = gmsh.model.mesh.getElements(3)
     tets = np.array(elem_nodes[0]).reshape(-1, 4)
     chamber_pts = np.array([[coord_of[n] for n in tet] for tet in tets]).mean(axis=1)
@@ -445,7 +487,7 @@ def build(params_in: dict, out_dir: str, step_path: str | None,
     # The plasma cavity, NOT the chamber part's bounding annulus -- see
     # detect_channel_cavity()'s docstring for why the difference matters.
     channel_inner_r, channel_outer_r, channel_y_anode, channel_y_exit = \
-        detect_channel_cavity(chamber_pts, axis_x, axis_z)
+        detect_channel_cavity(chamber_pts, chamber_nodes, axis_x, axis_z)
     channel_y_min = min(channel_y_anode, channel_y_exit)
     channel_y_max = max(channel_y_anode, channel_y_exit)
     print(f"\nChannel cavity (from chamber geometry): inner_r={channel_inner_r:.4f} "

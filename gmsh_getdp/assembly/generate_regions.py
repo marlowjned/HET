@@ -48,8 +48,8 @@ MU0 = 4 * math.pi * 1e-7
 # Kept in sync with build_assembly.py's EXCITATION -- see its comment for
 # how 2.0 A was derived from the 300 G channel-exit target.
 DEFAULT_EXCITATION = {
-    "inner_coil": dict(turns=300, current=2.0, polarity=-1),
-    "outer_coil": dict(turns=200, current=2.0, polarity=+1),
+    "inner_coil": dict(turns=260, current=1.25, polarity=-1),
+    "outer_coil": dict(turns=165, current=1.25, polarity=+1),
 }
 
 # Generic soft steel B-H curve, verbatim from GetDP's bundled

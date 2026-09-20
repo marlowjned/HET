@@ -67,10 +67,11 @@ union blocker gets resolved on the Onshape side.
   hardcoded geometry. Nonlinear iron (generic soft-steel B-H curve,
   replacing the old linear `mur_iron=1000` placeholder) is implemented
   and **converging** — see `gmsh_getdp/README.md` "Nonlinear iron
-  (B-H curve)". Winding excitation is no longer a placeholder: it's
-  sized to the ~300 G channel-exit design target (2 A per coil), which
-  is also what made the nonlinear solve tractable, since the old 5 A
-  placeholder drove the iron past saturation.
+  (B-H curve)". Winding excitation is no longer a placeholder: it's a
+  real winding design (260/165 turns at 1.25 A) sized to the ~300 G
+  channel-exit target, which is also what made the nonlinear solve
+  tractable, since the old 5 A placeholder drove the iron past
+  saturation. The magnet circuit needs ~3.7 V at 1.25 A, ~5 W.
 - Top-level thruster sizing (power/thrust/Isp from design targets):
   **working**, standalone, in `sizing/`.
 - Not yet started: wiring `sizing/`'s targets into the CAD dimensions,

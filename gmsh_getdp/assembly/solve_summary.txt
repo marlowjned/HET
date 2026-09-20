@@ -2,11 +2,11 @@ BPL-700 real-CAD magnetostatics solve summary
 (nonlinear iron, generic soft-steel B-H curve -- see generate_regions.py)
 
 Iron elements: 212311
-  max |B|    = 0.8593 T
-  mean |B|   = 0.1015 T
-  median |B| = 0.0766 T
-  p90 |B|    = 0.1834 T
-  p99 |B|    = 0.4543 T
+  max |B|    = 0.8755 T
+  mean |B|   = 0.1039 T
+  median |B| = 0.0784 T
+  p90 |B|    = 0.1879 T
+  p99 |B|    = 0.4651 T
 
 Overall (iron+air+windings) elements: 589708
-  max |B| = 0.8593 T
+  max |B| = 0.8755 T
