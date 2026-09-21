@@ -61,9 +61,19 @@ Include "assembly_regions_generated.pro";
 // cold-start solve is expected to converge too. If the excitation is ever
 // raised back into saturation, restore a fine ramp (git history has the
 // 16-stage schedule) or switch to Newton.
+//
+// LinearIron is set by assembly_regions_generated.pro (generate_regions.py's
+// iron_mur option). With a constant-mu iron there is nothing to ramp: one
+// stage, and the Picard loop exits after its first residual check.
+If(LinearIron)
+Function {
+  RampFrac() = {1.0};
+}
+Else
 Function {
   RampFrac() = {0.5, 1.0};
 }
+EndIf
 
 DefineConstant[
   NL_tol_abs = 1e-6,   // absolute tolerance on residual for the nonlinear iron iteration

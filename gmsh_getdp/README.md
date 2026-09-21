@@ -33,9 +33,9 @@ read results back), not the numerical engine.
   Configuration parameters (`emag_height`, `inner/outer_coil_id/od`) now
   drive this pull -- see `../onshape/cache.py`'s docstring for why (the
   soft-iron core's diameter IS the coil ID it wraps, so there's no
-  separate core-diameter parameter). `chamber_spacer` is treated as iron
-  for now (`build_assembly.py --exclude-chamber-spacer` to test the inert
-  alternative) -- its real material isn't confirmed.
+  separate core-diameter parameter). `chamber_spacer` is iron (confirmed
+  2026-09-21: the same A36 as the plates; `--exclude-chamber-spacer`
+  still tests the inert case).
 - **Center/outer current-ratio sweep**: done at the old geometry and the
   old linear-iron material (pole names `center_solenoid`/`outer_solenoid`,
   since renamed to `inner_coil`/`outer_coil` -- `current_sweep.py` itself
@@ -186,6 +186,49 @@ electron Larmor radius / discharge voltage requirements, not modeled
 here), and the underlying solve is the linear/no-saturation placeholder
 -- though see "Nonlinear iron" above for why superposition turns out to
 be legitimate at the real design point anyway.
+
+## Spacer-height sweep (`emag_sweep.py`)
+
+Sizes the `chamber_spacer`. Full write-up, figures and every coil geometry:
+**`../EMAG_REPORT.pdf`**. Geometry facts it rests on,
+measured from the STEP exports:
+
+- **spacer = emag_height - 1.125 in.** The chamber and top plate never
+  move; emag_height moves only the bottom plate. At 1.125 in Onshape drops
+  the spacer body entirely (`build_assembly.py` accepts that).
+- The chamber bore and spacer bore are both the inner coil's OD
+  (r 17.46 mm), so the inner winding can only grow inward by thinning the
+  core (`inner_coil_id`). The pole cap stays 1.375 in regardless.
+
+Grid: emag_height 1.125-2.0 in (spacer 0-0.875 in, 0.125 steps) x inner
+core 1.000/0.875/0.750 in, plus one outer-OD 1.625 in check -- 25 points.
+**Linear iron** (mu_r 1500): +1.25% on exit field vs the committed nonlinear
+solve at equal current (`--validate`), ~2.5 min/point instead of ~70.
+
+Results (`assembly/emag_sweep_results.csv`), all scaled to 300 G at the exit:
+
+- A-turns for 300 G: inner 326-339, outer 207-215 each, across the whole
+  grid. Spacer height moves it ~1% (= mesh noise); a 0.750 in core adds ~2%.
+- Core shaft flux 0.34-0.74 T, highest at the **longest** spacer (the steel
+  spacer wraps the inner coil and pulls leakage flux through the core).
+  Knee on the measured 1020 curve is 1.3-1.5 T.
+- The spacer mostly changes winding room: AWG 20 at the 1.000 in core goes
+  1.27 A / 5.1 W (spacer 0.875) -> 2.25 A / 10.0 W (spacer 0). A 0.750 in
+  core with no spacer is 1.28 A / 5.4 W -- today's numbers.
+
+Worst-case nonlinear check (`--nonlinear h2.000_ci0.750_oo1.500`, 0.74 T
+core): the 50% stage converged in 9 Picard iterations, but the 100% stage
+**stalled** at rel. residual ~0.11 for all 60 iterations (2.4 h) -- not
+converged. Unconverged, it matches linear to 0.3% at the exit and puts the
+inner core 3.4% lower; its p99.9 iron |B| is 13% higher (a few corner
+elements, plausibly where Picard stalls). A real check needs a finer ramp
+or Newton.
+
+Two pipeline fixes came out of it: `build_assembly.py`'s mesh fine size is
+now capped at the baseline value (a thinner core coarsened the whole mesh,
+which failed on the bottom plate's 2 mm lead holes and made resolution vary
+across the sweep), and a meshing exception now finalizes gmsh (leaving it
+initialized made the *next* build silently write an empty mesh).
 
 ## Operating point
 

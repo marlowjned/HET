@@ -15,3 +15,5 @@ gmsh_getdp/**/*.pre
 gmsh_getdp/**/*.res
 gmsh_getdp/**/*.npz
 gmsh_getdp/**/__pycache__/
+gmsh_getdp/assembly/sweep_runs/
+report/*.pdf

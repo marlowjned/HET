@@ -198,13 +198,14 @@ def _fallback_area(why: str) -> tuple[float, str]:
     return 2 * math.pi * r * (r + h), f"bounding cylinder r={r*1e3:.1f} h={h*1e3:.1f} mm -- {why}"
 
 
-def total_dissipation(current: float, T_coil_C: float) -> float:
-    return sum(c.count * c.dissipation(current, T_coil_C) for c in COILS)
+def total_dissipation(current: float, T_coil_C: float, coils: list[Coil] | None = None) -> float:
+    coils = COILS if coils is None else coils
+    return sum(c.count * c.dissipation(current, T_coil_C) for c in coils)
 
 
 def solve_steady(current: float, area: float, eps: float = EPS_ENVELOPE,
                  coil_interface: str = "contact", h_contact: float = 500.0,
-                 t_amb: float = T_AMB) -> dict:
+                 t_amb: float = T_AMB, coils: list[Coil] | None = None) -> dict:
     """Steady-state temperatures.
 
     The iron node sheds all the heat by radiation; each coil sits above it
@@ -218,14 +219,18 @@ def solve_steady(current: float, area: float, eps: float = EPS_ENVELOPE,
                      h_contact ~ 500-5000 W/m^2-K for clamped metal in vacuum.
       "radiation" -- worst case, coil thermally floating in its pocket, coupled
                      only by radiation across the gap.
+
+    coils: defaults to the committed design (COILS); pass another set to
+    evaluate a different winding, e.g. from sizing/winding_design.py.
     """
+    COILS_ = COILS if coils is None else coils
     T_iron = t_amb
-    T_coil = {c.name: t_amb for c in COILS}
+    T_coil = {c.name: t_amb for c in COILS_}
 
     for _ in range(200):
-        Q = sum(c.count * c.dissipation(current, T_coil[c.name] - 273.15) for c in COILS)
+        Q = sum(c.count * c.dissipation(current, T_coil[c.name] - 273.15) for c in COILS_)
         T_iron_new = (Q / (eps * SIGMA * area) + t_amb ** 4) ** 0.25
-        for c in COILS:
+        for c in COILS_:
             if coil_interface == "contact":
                 G = h_contact * c.bore_area
             else:
@@ -238,7 +243,7 @@ def solve_steady(current: float, area: float, eps: float = EPS_ENVELOPE,
 
     return {
         "current": current,
-        "Q": sum(c.count * c.dissipation(current, T_coil[c.name] - 273.15) for c in COILS),
+        "Q": sum(c.count * c.dissipation(current, T_coil[c.name] - 273.15) for c in COILS_),
         "T_iron_C": T_iron - 273.15,
         "T_ptfe_C": T_iron - 273.15,          # no source term; floats at iron
         "T_coil_C": {k: v - 273.15 for k, v in T_coil.items()},

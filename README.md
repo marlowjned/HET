@@ -87,8 +87,15 @@ union blocker gets resolved on the Onshape side.
 - Magnets-only thermal: **working**, in `thermal/` — 64 °C at the
   design point, first material limit (wire insulation) at ~2.4× design
   current. Plasma-loaded thermal is not modelled.
+- Spacer-height geometry sweep: **done** —
+  `gmsh_getdp/assembly/emag_sweep.py` drives Onshape → mesh → linear
+  solve across `emag_height` (spacer 0–0.875 in) × inner core diameter;
+  `sizing/winding_design.py` turns each result into a winding, current,
+  voltage, power and temperature. Write-up with figures, every coil
+  geometry and the power-supply requirements:
+  **`EMAG_REPORT.pdf`** (rebuild with
+  `python report/make_report.py`, which writes `EMAG_REPORT.pdf`).
 - Not yet started: wiring `sizing/`'s targets into the CAD dimensions,
-  the geometry sweep runsheet and orchestrator across the 5 Onshape
-  parameters, electric-field/plasma simulation, electron
+  electric-field/plasma simulation, electron
   trajectory/stability, plasma-loaded thermal, and structural/force
   analysis.

@@ -123,6 +123,8 @@ call; a miss costs a translation request + poll + download (~10s here).
 
 `get_step_for_config` and `gmsh_getdp/assembly/build_assembly.py` (whole-
 assembly STEP import, real coil solids, incremental iron fuse) are wired
-together and validated end-to-end with a real solve. Not yet built:
-nonlinear iron (B-H curve, replacing the `mur_iron=1000` placeholder) and
-the runsheet/sweep orchestration across the parameter grid.
+together and validated end-to-end with a real solve. Nonlinear iron is done,
+and `gmsh_getdp/assembly/emag_sweep.py` is the first sweep driver built on
+this cache (emag_height x inner_coil_id). At `emag_height=1.125in` the
+spacer has zero height and Onshape omits the `chamber_spacer` body from the
+export rather than erroring.

@@ -22,8 +22,9 @@ where it came from.
 
 ## ASTM A36 structural steel
 
-Top plate, bottom plate, inner and outer emag cores. Possibly also
-`chamber_spacer` -- see "Open questions".
+Top plate, bottom plate and `chamber_spacer` (confirmed 2026-09-21: the
+spacer is the same soft iron as the plates). The emag cores are a
+different grade -- see "ASTM A108 cold-finished bar" below.
 
 ### Procurement source
 
@@ -55,16 +56,17 @@ stack would have brought.
 |---|---|---|
 | top plate | 9.53 mm (0.375 in) | **yes, exact stock thickness** |
 | bottom plate | 9.53 mm (0.375 in) | **yes, exact stock thickness** |
-| outer emag core (x4) | 25.4 mm dia round | no -- turned from bar |
-| inner emag core | 42.9 mm dia round | no -- turned from bar |
-| chamber_spacer | 22.2 mm | no |
+| chamber_spacer | emag_height - 1.125 in (0 to 22.2 mm) | **yes at 0.187 / 0.250 / 0.313 / 0.375 / 0.500 in**, i.e. emag_height 1.312 / 1.375 / 1.438 / 1.500 / 1.625 in |
+| outer emag core (x4) | 25.4 mm dia shaft | no -- A108 bar, see below |
+| inner emag core | 25.4 mm dia shaft (= inner_coil_id), 34.9 mm pole cap | no -- A108 bar, see below |
 
-The cores are round turned parts and must be sourced as bar stock
-elsewhere, so **the cores and plates will not be the same lot and need not
-be the same grade** unless that is specified on purpose. Worth deciding
-rather than inheriting -- the cores carry the highest flux density in the
-circuit (peak 1.023 T at the pole tips), so if either part deserves the
-better magnetic material it is those.
+(An earlier version of this table gave the inner core as 42.9 mm dia; the
+CAD measures a 25.4 mm shaft under the winding and a 34.9 mm pole cap.)
+
+The spacer is an annulus (r 17.46-41.28 mm) whose height tracks
+emag_height, so a spacer height that lands on a stock thickness is a single
+laser-cut part, and one that doesn't needs a stack or machining. Worth
+weighing in the spacer-height trade (`gmsh_getdp/assembly/emag_sweep.py`).
 
 Laser cutting leaves a heat-affected zone with altered microstructure at
 every cut edge; the Fermilab measurement cited below deliberately sampled
@@ -140,6 +142,72 @@ directly.
 | thermal expansion | 12 um/m-K | unused | **verified** |
 | electrical conductivity | 12% IACS | unused (relevant only to eddy currents) | **verified** |
 | melting range | 1420-1460 C | unused | **verified** |
+
+---
+
+## ASTM A108 cold-finished bar (emag cores)
+
+Inner and outer emag cores. Round turned parts, so they come from bar
+stock rather than SendCutSend sheet: **McMaster "multipurpose low-carbon
+steel" rod, ASTM A108**. A108 is a specification for cold-finished carbon
+bar and covers several grades; for this product it is taken to be
+**1018, cold drawn** (see "Open questions").
+
+### Physical and thermal
+
+From [makeitfrom.com -- cold drawn 1018][mif1018], fetched and read
+directly.
+
+| property | value | confidence |
+|---|---|---|
+| carbon | 0.15-0.20% | **verified** |
+| manganese | 0.6-0.9% | **verified** |
+| density | 7.9 g/cm^3 | **verified** |
+| tensile strength (ultimate) | 480 MPa | **verified** |
+| yield strength | 400 MPa | **verified** |
+| thermal conductivity | 52 W/m-K | **verified** |
+| specific heat | 470 J/kg-K | **verified** |
+| max service temperature | 400 C | **verified** |
+| electrical conductivity | 7.0% IACS | **verified** |
+
+Thermally it is interchangeable with A36 (same conductivity, heat
+capacity and service limit), so the thermal model's single isothermal
+iron node covers both without change.
+
+### Magnetic
+
+| property | value | confidence |
+|---|---|---|
+| DC magnetization curve | measured 1020, 21 points, 0-1.9 T | **verified** (primary source read; grade is a proxy) |
+| mu_r at 1.0 T | ~2170 | derived |
+| mu_r at 1.2 T | ~1460 | derived |
+| mu_r at 1.4 T | ~820 | derived |
+| mu_r at 1.5 T | ~520 | derived |
+
+Curve: [Fermilab TM-1197][fnal] Table 2, toroids machined from purchased
+1020 stock and measured by Arnold Engineering. The report PDF was fetched
+and all 21 rows read off the scanned table page, not just its OCR text.
+Stored as `FNAL1020_B`/`FNAL1020_H` in
+`gmsh_getdp/assembly/generate_regions.py`.
+
+**This is a much better-provenanced curve than the plates' A36 proxy** --
+a primary measurement, not a forum transcription -- but it is still 1020
+standing in for 1018. The two are adjacent plain-carbon grades (1018:
+0.15-0.20% C, 1020: 0.18-0.23% C), so the curve should be close. Cold
+drawing adds residual strain, which lowers permeability relative to
+annealed bar; FNAL describes its samples as behaving like hot-rolled
+material. If the cores ever run near the knee, a stress-relief anneal
+after machining is the cheap fix.
+
+What the curve is used for: the core saturation margin in the spacer
+sweep. The sweep itself runs linear iron, since the channel field is
+insensitive to iron grade (gap-dominated circuit); what grade does
+control is where a thinned core saturates. The knee on this curve is
+around 1.3-1.5 T (mu_r falls from ~1460 at 1.2 T to ~520 at 1.5 T).
+
+The same report's Table 1 is a measured **1008** curve -- a primary-source
+candidate to replace the secondhand Maxwell 1008 data the plates' proxy
+uses. Not yet transcribed.
 
 ---
 
@@ -249,13 +317,9 @@ conservative.
 
 ## Open questions
 
-- **`chamber_spacer` material is unconfirmed.** Currently treated as iron;
-  `build_assembly.py --exclude-chamber-spacer` tests the inert
-  alternative. Nobody has confirmed which it is.
-- **The cores cannot come from SendCutSend.** They are turned round parts,
-  not sheet, so they need bar stock from another supplier -- and therefore
-  a deliberate grade choice. If they end up as something other than A36,
-  this file needs a second iron entry rather than an edit to the first.
+- **Which A108 grade the core bar is.** A108 is a cold-finished-bar
+  specification, not a grade; McMaster's "multipurpose low-carbon" rod is
+  taken to be 1018. Worth confirming on the order/cert.
 - **No numeric A36 B-H curve.** The model runs 1008 data as a proxy, which
   is optimistic about the iron. This is the single weakest input that
   anything depends on.
@@ -277,10 +341,12 @@ conservative.
 - [design1st -- Thermal Emissivity Values][emis] -- emissivity tables
 - [The Plastic Shop -- PTFE Technical Information][ptfe] -- PTFE service temperature, arc resistance
 - [FEMM -- DC Magnetization Curves of Soft Magnetic Materials][femm] -- context on low-carbon steel B-H data and its origin (Metals Handbook, 8th ed., Vol. 1, ASM 1966)
+- [makeitfrom.com -- cold drawn 1018 carbon steel][mif1018] -- core (A108) physical/thermal properties
 - [SendCutSend -- cold rolled mild steel][scs] -- **procurement source**; grade, mechanical properties, thicknesses, tolerances
-- [FNAL via INIS -- B vs H curves for 1008 and 1020 steels][fnal] -- a real measurement of 1008 toroids; numeric data is in the PDF and has not been extracted. **This is the best candidate for replacing the secondhand B-H curve.**
+- [FNAL TM-1197 via INIS -- B vs H curves for 1008 and 1020 steels][fnal] -- measured toroid curves. **Table 2 (1020) is transcribed and is the core material's curve.** Table 1 (1008) is the best candidate for replacing the plates' secondhand B-H proxy; not yet transcribed.
 
 [mif1008]: https://www.makeitfrom.com/material-properties/SAE-AISI-1008-G10080-Carbon-Steel
+[mif1018]: https://www.makeitfrom.com/material-properties/Cold-Drawn-1018-Carbon-Steel
 [mifa36]: https://www.makeitfrom.com/material-properties/ASTM-A36-SS400-S275-Structural-Carbon-Steel
 [emis]: https://www.design1st.com/Design-Resource-Library/engineering_data/ThermalEmissivityValues.pdf
 [ptfe]: https://www.theplasticshop.co.uk/ptfe-technical-information.html

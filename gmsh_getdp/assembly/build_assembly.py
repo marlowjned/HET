@@ -13,11 +13,11 @@ scratch_whole_assembly_import.py.
 Body naming, confirmed via a real Onshape pull (2026-09-18, inspecting the
 imported STEP's entity names directly -- not assumed):
   iron:    top_plate (x1), bottom_plate (x1), inner_emag_core (x1),
-           outer_emag_core (x4). Also chamber_spacer (x1) -- its magnetic
-           relevance is genuinely unconfirmed (not in the old per-part
-           pipeline at all); treated as iron for now per instruction "we
-           can try both" -- flip INCLUDE_CHAMBER_SPACER_AS_IRON to test
-           the inert alternative.
+           outer_emag_core (x4). Also chamber_spacer (x1) -- confirmed
+           2026-09-21 to be the same A36 as the plates, so iron is the
+           default; --exclude-chamber-spacer still tests the inert case.
+           Its height is emag_height - 1.125in; at 1.125in Onshape omits
+           the body entirely.
   coil:    inner_coil (x1), outer_coil (x4) -- real winding solids exported
            by Onshape at exactly the configured ID/OD. No more
            occ.addCylinder/occ.cut primitive construction.
@@ -241,11 +241,15 @@ def build(params_in: dict, out_dir: str, step_path: str | None,
     iron_dimtags = []
     coil_entries = []  # (base_name, dimtag)
     chamber_dimtag = None
+    # emag_height = 1.125in is spacer height 0: Onshape then drops the body
+    # entirely rather than exporting a zero-thickness solid.
+    has_spacer = False
     for d, t in dimtags:
         name = base_name(gmsh.model.getEntityName(d, t))
         if name in IRON_CORE_NAMES:
             iron_dimtags.append((d, t))
         elif name == CHAMBER_SPACER_NAME:
+            has_spacer = True
             if include_chamber_spacer_as_iron:
                 iron_dimtags.append((d, t))
             # else: leave unclassified -> falls into Air, same as chamber
@@ -258,7 +262,7 @@ def build(params_in: dict, out_dir: str, step_path: str | None,
             raise AssertionError(f"unrecognized body name {name!r} (tag {t}) -- "
                                   f"update IRON_CORE_NAMES/COIL_NAMES/CHAMBER_* above")
 
-    n_expected_iron = 7 + (1 if include_chamber_spacer_as_iron else 0)
+    n_expected_iron = 7 + (1 if include_chamber_spacer_as_iron and has_spacer else 0)
     assert len(iron_dimtags) == n_expected_iron, \
         f"expected {n_expected_iron} iron bodies, got {len(iron_dimtags)}"
     assert len(coil_entries) == 5, f"expected 5 coil bodies, got {len(coil_entries)}"
@@ -410,9 +414,16 @@ def build(params_in: dict, out_dir: str, step_path: str | None,
         print(f"  {t:2d}  {name}")
 
     # --- Mesh ------------------------------------------------------------
+    # Capped at the baseline inner build (0.1875in). Uncapped, a thinner core
+    # (thicker inner winding) coarsened the whole mesh, which (a) left the
+    # bottom plate's 2mm lead holes unresolvable -- "Invalid boundary mesh
+    # (overlapping facets)" at inner_coil_id=0.875in -- and (b) made mesh
+    # resolution vary across a geometry sweep, i.e. mesh noise in the
+    # comparison. The cap keeps every sweep point at the baseline resolution.
     min_winding_wall = min(
         (params_in["inner_coil_od"] - params_in["inner_coil_id"]) / 2,
         (params_in["outer_coil_od"] - params_in["outer_coil_id"]) / 2,
+        0.1875,
     ) * INCH_TO_M
     gmsh.option.setNumber("Mesh.MeshSizeMin", min_winding_wall / 2)
     gmsh.option.setNumber("Mesh.MeshSizeMax", air_radius / 4)
@@ -428,13 +439,18 @@ def build(params_in: dict, out_dir: str, step_path: str | None,
     gmsh.model.mesh.field.setNumber(2, "DistMax", extent * 1.5)
     gmsh.model.mesh.field.setAsBackgroundMesh(2)
 
-    gmsh.model.mesh.generate(3)
+    try:
+        gmsh.model.mesh.generate(3)
+    except Exception:
+        gmsh.finalize()   # leaving gmsh initialised makes the NEXT build write an empty mesh
+        raise
 
     gmsh.option.setNumber("Mesh.MshFileVersion", 2.2)
     msh_path = os.path.join(out_dir, "assembly.msh")
     gmsh.write(msh_path)
 
     n_nodes = len(gmsh.model.mesh.getNodes()[0])
+    assert n_nodes > 0, "empty mesh"
     print(f"\nFinal mesh: {n_nodes} nodes -> {msh_path}")
 
     gmsh.finalize()
