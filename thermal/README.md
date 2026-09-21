@@ -19,27 +19,35 @@ so it runs standalone.
 
 ## Result at the design point
 
-1.25 A, 260/165 turns of AWG 20 -- see `../gmsh_getdp/README.md`
+1.30 A, 260/165 turns of AWG 20 -- see `../gmsh_getdp/README.md`
 "Solenoid winding design":
 
 | | value |
 |---|---|
-| dissipation | 5.3 W |
-| iron / PTFE | 61 C |
-| coils, bonded to core | 62 C |
-| coils, radiation-coupled only | 87 C |
+| dissipation | 5.8 W |
+| iron / PTFE | 64 C |
+| coils, bonded to core | 65 C |
+| coils, radiation-coupled only | 92 C |
 
 Nothing is close to a limit. Margin to the first one:
 
 | limit | | current | vs design |
 |---|---|---|---|
-| fiberglass wire insulation | 200 C | 3.09 A | 2.5x |
-| PTFE chamber | 260 C | 3.76 A | 3.0x |
-| soft iron (Curie) | 770 C | 8.79 A | 7.0x |
+| fiberglass wire insulation | 200 C | 3.09 A | 2.4x |
+| PTFE chamber | 260 C | 3.76 A | 2.9x |
+| ASTM A36 service limit | 400 C | 5.26 A | 4.0x |
+| ASTM A36 Curie point | 770 C | 8.79 A | 6.8x |
 
 The 200 C wire figure is deliberately conservative -- glass serving itself
 tolerates far more, and the real limit depends on the binder. If that
 number is firmed up, PTFE becomes the binding constraint.
+
+Iron properties are ASTM A36 (k = 50 W/m-K, cp = 470 J/kg-K,
+rho = 7900 kg/m^3, service 400 C, Curie ~770 C), from
+[makeitfrom.com](https://www.makeitfrom.com/material-properties/ASTM-A36-SS400-S275-Structural-Carbon-Steel).
+See `../MATERIALS.md` for sourcing and confidence.
+Heat capacity and density are carried but unused by this steady-state
+model -- they are what a transient warm-up version would need.
 
 ## What the model does and doesn't include
 
@@ -65,12 +73,16 @@ lowest limit in the build.
 
 | eps | hottest part | surface |
 |---|---|---|
-| 0.15 | 93 C | polished steel |
-| 0.30 | 62 C | bare machined steel (assumed) |
-| 0.50 | 49 C | lightly oxidised |
-| 0.80 | 41 C | blackened / anodised |
+| 0.15 | 98 C | polished steel |
+| 0.30 | 65 C | bare machined steel (assumed) |
+| 0.50 | 50 C | lightly oxidised |
+| 0.80 | 42 C | blackened / anodised |
 
-That's a 50 C spread at the design current from one number, larger than
+Sourced ranges (see `../MATERIALS.md`): mild steel is 0.20-0.32, so the
+0.30 default sits at the *optimistic* end; real black coatings reach
+0.88-0.91, better than the 0.80 used here.
+
+That's a 56 C spread at the design current from one number, larger than
 any geometric detail this model could resolve. Blackening the exterior is
 the cheapest thermal margin available. If the real finish is unknown, read
 the sweep rather than the single design-point figure.

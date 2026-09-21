@@ -8,6 +8,9 @@ through; rather than being redundant, the second (Gmsh+GetDP) is the one
 that's currently ahead and validated. This file is a map of the repo, not a
 status report — each subfolder's own README/notes carry current status.
 
+Material properties used anywhere in the project, with sources and a
+per-value confidence rating, are collected in **`MATERIALS.md`**.
+
 ## Layout
 
 - **`sizing/`** — `basic_het_sizing.py`: zero-CAD, textbook top-level
@@ -71,18 +74,18 @@ union blocker gets resolved on the Onshape side.
 - Real-geometry magnetostatic B-field solve: **working**, in
   `gmsh_getdp/assembly/`, sourced from a parametrized whole-assembly
   Onshape STEP export (all 5 geometry params) rather than a fixed
-  hardcoded geometry. Nonlinear iron (generic soft-steel B-H curve,
+  hardcoded geometry. Nonlinear iron (ASTM A36, modelled with an AISI 1008 proxy B-H curve,
   replacing the old linear `mur_iron=1000` placeholder) is implemented
   and **converging** — see `gmsh_getdp/README.md` "Nonlinear iron
   (B-H curve)". Winding excitation is no longer a placeholder: it's a
-  real winding design (260/165 turns at 1.25 A) sized to the ~300 G
+  real winding design (260/165 turns at 1.30 A) sized to the ~300 G
   channel-exit target, which is also what made the nonlinear solve
   tractable, since the old 5 A placeholder drove the iron past
-  saturation. The magnet circuit needs ~3.7 V at 1.25 A, ~5 W.
+  saturation. The magnet circuit needs ~3.8 V at 1.30 A, ~5.8 W.
 - Top-level thruster sizing (power/thrust/Isp from design targets):
   **working**, standalone, in `sizing/`.
-- Magnets-only thermal: **working**, in `thermal/` — 61 °C at the
-  design point, first material limit (wire insulation) at ~2.5× design
+- Magnets-only thermal: **working**, in `thermal/` — 64 °C at the
+  design point, first material limit (wire insulation) at ~2.4× design
   current. Plasma-loaded thermal is not modelled.
 - Not yet started: wiring `sizing/`'s targets into the CAD dimensions,
   the geometry sweep runsheet and orchestrator across the 5 Onshape

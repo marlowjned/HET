@@ -9,8 +9,8 @@ build_assembly.py already writes once per mesh.
 
 This is the SOLE generator of the Group/Function block now -- build_assembly.py
 used to duplicate this same generation inline, but that got hard to justify
-once the Iron material definition below grew to ~100 hand-copied B-H curve
-numbers (see STEEL_GENERIC_H/STEEL_GENERIC_B); build_assembly.py now calls
+once the Iron material definition below grew to a hand-copied B-H curve
+(see AISI1008_H/AISI1008_B); build_assembly.py now calls
 generate_regions_pro() directly instead of keeping a second copy in sync.
 magnetostatics_assembly.pro is untouched -- it just `Include`s whatever
 this writes.
@@ -21,23 +21,23 @@ see that script's docstring for why windings no longer carry a zdir (every
 winding's axis is confirmed global Y directly from geometry, so current
 sign is one constant per pole TYPE, not a per-occurrence flip).
 
-Iron is now a NONLINEAR material (generic soft steel B-H curve), not the
-mur_iron=1000 linear placeholder every earlier version of this pipeline
-used. Data source: GetDP's own bundled
-tools/getdp-3.5.0-Windows64/templates/Lib_Materials.pro (SteelGeneric_
-magnetic_field_list()/_magnetic_flux_density_list(), lines ~88-105) --
-copied inline here rather than `Include`d from that path, since `tools/`
-is gitignored/machine-local (see gmsh_getdp/README.md Setup). The
-reluctivity-interpolation derivation (nu as a function of B^2, built via
-ListAlt[] + InterpolationLinear[SquNorm[$1]]{...}) is the same pattern
-Lib_Materials.pro itself uses (lines ~173-192) and that GetDP's own
-examples/magnet.pro exercises for a real nonlinear a-formulation solve --
-not invented for this project. Air/Windings stay linear (mu_r=1, no
-argument needed); only Iron's nu[] definition takes an argument now, which
-is why the Formulation (magnetostatics_assembly.pro) splits the single
-Galerkin term over Domain into a linear part (Air+Windings, nu[]) and a
-nonlinear part (Iron, nu[{d a}]) -- same split GetDP's own
-Lib_Magnetostatics_a_phi.pro template uses for Vol_L_Mag vs Vol_NL_Mag.
+Iron is a NONLINEAR material. The hardware is **ASTM A36**; the B-H table
+below is **AISI 1008 data used as a proxy**, since no numeric A36 curve
+was obtainable. It is deliberately not relabelled -- see the block above
+AISI1008_H for why, which way the error runs, and roughly how big it is.
+This replaced, in order: the original mur_iron=1000 linear placeholder,
+then GetDP's bundled generic "SteelGeneric" dataset.
+
+The reluctivity-interpolation derivation (nu as a function of B^2, built
+via ListAlt[] + InterpolationLinear[SquNorm[$1]]{...}) is the pattern
+GetDP's own Lib_Materials.pro uses, and that its examples/magnet.pro
+exercises for a real nonlinear a-formulation solve -- not invented for
+this project. Air/Windings stay linear (mu_r=1, no argument needed); only
+Iron's nu[] definition takes an argument, which is why the Formulation
+(magnetostatics_assembly.pro) splits the single Galerkin term over Domain
+into a linear part (Air+Windings, nu[]) and a nonlinear part (Iron,
+nu[{d a}]) -- same split GetDP's own Lib_Magnetostatics_a_phi.pro template
+uses for Vol_L_Mag vs Vol_NL_Mag.
 """
 import math
 
@@ -46,35 +46,68 @@ from params_utils import parse_params
 MU0 = 4 * math.pi * 1e-7
 
 # Kept in sync with build_assembly.py's EXCITATION -- see its comment for
-# how 2.0 A was derived from the 300 G channel-exit target.
+# how 1.30 A was derived from the 300 G channel-exit target.
 DEFAULT_EXCITATION = {
-    "inner_coil": dict(turns=260, current=1.25, polarity=-1),
-    "outer_coil": dict(turns=165, current=1.25, polarity=+1),
+    "inner_coil": dict(turns=260, current=1.30, polarity=-1),
+    "outer_coil": dict(turns=165, current=1.30, polarity=+1),
 }
 
-# Generic soft steel B-H curve, verbatim from GetDP's bundled
-# Lib_Materials.pro (SteelGeneric_magnetic_field_list() /
-# _magnetic_flux_density_list()) -- see module docstring. H in A/m, B in T,
-# 49 points, saturating in the 1.5-2.4 T range.
-STEEL_GENERIC_H = [
-    0.0000e+00, 5.5023e+00, 1.1018e+01, 1.6562e+01, 2.2149e+01, 2.7798e+01, 3.3528e+01,
-    3.9363e+01, 4.5335e+01, 5.1479e+01, 5.7842e+01, 6.4481e+01, 7.1470e+01, 7.8906e+01,
-    8.6910e+01, 9.5644e+01, 1.0532e+02, 1.1620e+02, 1.2868e+02, 1.4322e+02, 1.6050e+02,
-    1.8139e+02, 2.0711e+02, 2.3932e+02, 2.8028e+02, 3.3314e+02, 4.0231e+02, 4.9395e+02,
-    6.1678e+02, 7.8320e+02, 1.0110e+03, 1.3257e+03, 1.7645e+03, 2.3819e+03, 3.2578e+03,
-    4.5110e+03, 6.3187e+03, 8.9478e+03, 1.2802e+04, 1.8500e+04, 2.6989e+04, 3.9739e+04,
-    5.9047e+04, 8.8520e+04, 1.3388e+05, 2.0425e+05, 3.1434e+05, 4.8796e+05, 7.6403e+05,
+# DC magnetization curve. H in A/m, B in T.
+#
+# *** THIS IS AISI 1008 DATA USED AS A PROXY FOR ASTM A36. ***
+#
+# The hardware is A36 (SendCutSend hot-rolled pickled-and-oiled, the only
+# grade they stock thick enough for the 0.375in plates). No numeric A36
+# B-H table could be obtained -- the published A36 magnetization work is
+# transformer-tank literature behind paywalls -- so the 1008 curve below
+# stands in for it, deliberately NOT relabelled, because a curve wearing
+# the wrong material's name is exactly the failure mode this project
+# already hit once.
+#
+# Direction of the error: A36 carries up to 0.26% carbon against 1008's
+# ~0.08%, plus up to 1.2% manganese. More carbon means more pearlite and
+# more domain-wall pinning, so real A36 is LESS permeable and more
+# coercive than this curve. The model is therefore optimistic about the
+# iron. Offsetting that slightly, A36 here is hot-rolled rather than
+# cold-rolled, which leaves a more relaxed microstructure.
+#
+# Size of the error: switching the generic GetDP curve for this one
+# dropped mu_r at the operating point 2.7x and moved the channel field
+# 3.9%. A36 is plausibly another ~1.8x less permeable again, which by the
+# same empirical sensitivity suggests a further few percent -- i.e. the
+# real design current is probably nearer 1.35 A than 1.30 A. That is an
+# extrapolation, not a result.
+#
+# PROVENANCE of the 1008 points themselves: they originate in the Ansys
+# Maxwell SV material library and were transcribed via a public
+# engineering forum -- the primary source could not be re-fetched directly
+# (403). They are NOT from a mill certificate for any real stock.
+#
+# What gives reasonable confidence they are genuine digitized data rather
+# than something invented: every H value is an exact multiple of one
+# Oersted (2, 4, 6, 8, 10, 20, 40, 60, 80, 100, 200, 400, 600, 800, 1000,
+# 2000, 4000, 5000 Oe), which is how pre-SI magnetization tables were
+# tabulated. The curve is monotonic in both variables, differential
+# permeability rises then falls as a real magnetization curve must, and B
+# at 1000 Oe is 2.165 T -- squarely in the 2.1-2.2 T band expected of
+# low-carbon steel.
+#
+# The important caveat, which applies to A36 at least as strongly: neither
+# grade is an electrical steel, so ASTM imposes no magnetic requirement on
+# either. Two suppliers' stock can differ substantially and processing
+# history dominates. A measured curve on the actual plate is the only way
+# to do better than this.
+AISI1008_H = [
+    0.0, 159.2, 318.3, 477.5, 636.6, 795.8, 1591.5, 3183.1, 4774.6, 6366.2,
+    7957.7, 15915.5, 31831.0, 47746.5, 63662.0, 79577.5, 159155.0, 318310.0, 397887.0,
 ]
-STEEL_GENERIC_B = [
-    0.0000e+00, 5.0000e-02, 1.0000e-01, 1.5000e-01, 2.0000e-01, 2.5000e-01, 3.0000e-01,
-    3.5000e-01, 4.0000e-01, 4.5000e-01, 5.0000e-01, 5.5000e-01, 6.0000e-01, 6.5000e-01,
-    7.0000e-01, 7.5000e-01, 8.0000e-01, 8.5000e-01, 9.0000e-01, 9.5000e-01, 1.0000e+00,
-    1.0500e+00, 1.1000e+00, 1.1500e+00, 1.2000e+00, 1.2500e+00, 1.3000e+00, 1.3500e+00,
-    1.4000e+00, 1.4500e+00, 1.5000e+00, 1.5500e+00, 1.6000e+00, 1.6500e+00, 1.7000e+00,
-    1.7500e+00, 1.8000e+00, 1.8500e+00, 1.9000e+00, 1.9500e+00, 2.0000e+00, 2.0500e+00,
-    2.1000e+00, 2.1500e+00, 2.2000e+00, 2.2500e+00, 2.3000e+00, 2.3500e+00, 2.4000e+00,
+AISI1008_B = [
+    0.0, 0.2402, 0.8654, 1.1106, 1.2458, 1.3310, 1.5000, 1.6000, 1.6830, 1.7410,
+    1.7800, 1.9050, 2.0250, 2.0850, 2.1300, 2.1650, 2.2800, 2.4850, 2.5850,
 ]
-assert len(STEEL_GENERIC_H) == len(STEEL_GENERIC_B) == 49
+assert len(AISI1008_H) == len(AISI1008_B) == 19
+assert all(AISI1008_H[i] < AISI1008_H[i + 1] for i in range(18)), "H must increase"
+assert all(AISI1008_B[i] < AISI1008_B[i + 1] for i in range(18)), "B must increase"
 
 
 def _gmsh_list(values):
@@ -103,18 +136,19 @@ def generate_regions_pro(params, excitation, out_path="assembly_regions_generate
     lines.append("Function {")
     lines.append(f"  mu0 = {MU0!r};")
     lines.append("")
-    lines.append("  // Generic soft steel B-H curve (GetDP's bundled SteelGeneric material --")
-    lines.append("  // see this script's module docstring for the exact source/derivation).")
-    lines.append(f"  SteelGeneric_H() = {_gmsh_list(STEEL_GENERIC_H)};")
-    lines.append(f"  SteelGeneric_B() = {_gmsh_list(STEEL_GENERIC_B)};")
-    lines.append("  SteelGeneric_B2() = SteelGeneric_B()^2;")
-    lines.append("  SteelGeneric_nu_list() = SteelGeneric_H() / SteelGeneric_B();")
-    lines.append("  SteelGeneric_nu_list(0) = SteelGeneric_nu_list(1);  // avoid 0/0 at B=0")
-    lines.append("  SteelGeneric_nu_b2_list() = ListAlt[SteelGeneric_B2(), SteelGeneric_nu_list()];")
-    lines.append("  SteelGeneric_nu[] = InterpolationLinear[SquNorm[$1]]{SteelGeneric_nu_b2_list()};")
+    lines.append("  // Iron B-H curve. The hardware is ASTM A36; these are AISI 1008")
+    lines.append("  // points used as a PROXY -- see generate_regions.py for why, which")
+    lines.append("  // way the error runs, and its rough size.")
+    lines.append(f"  AISI1008_H() = {_gmsh_list(AISI1008_H)};")
+    lines.append(f"  AISI1008_B() = {_gmsh_list(AISI1008_B)};")
+    lines.append("  AISI1008_B2() = AISI1008_B()^2;")
+    lines.append("  AISI1008_nu_list() = AISI1008_H() / AISI1008_B();")
+    lines.append("  AISI1008_nu_list(0) = AISI1008_nu_list(1);  // avoid 0/0 at B=0")
+    lines.append("  AISI1008_nu_b2_list() = ListAlt[AISI1008_B2(), AISI1008_nu_list()];")
+    lines.append("  AISI1008_nu[] = InterpolationLinear[SquNorm[$1]]{AISI1008_nu_b2_list()};")
     lines.append("")
     lines.append("  nu[Air]  = 1 / mu0;")
-    lines.append("  nu[Iron] = SteelGeneric_nu[$1];  // nonlinear -- see magnetostatics_assembly.pro")
+    lines.append("  nu[Iron] = AISI1008_nu[$1];  // nonlinear -- see magnetostatics_assembly.pro")
     lines.append("                                   // for the Vol_L_Mag/Vol_NL_Mag Galerkin split this requires")
     lines.append("  nu[Windings] = 1 / mu0;  // copper, non-magnetic")
     lines.append("")

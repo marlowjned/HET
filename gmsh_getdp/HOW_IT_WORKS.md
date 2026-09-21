@@ -192,7 +192,7 @@ its "Generate the GetDP region/current-source include file" section.
 
 ```
 nu[Air]  = 1 / mu0;
-nu[Iron] = SteelGeneric_nu[$1];   // B-dependent, see section 9
+nu[Iron] = AISI1008_nu[$1];   // B-dependent, see section 9
 ```
 
 `nu` (reluctivity) is the magnetic analogue of electrical resistivity —
@@ -339,7 +339,7 @@ statistics plus a cross-section plot.
 
 Iron is no longer the `mur_iron = 1000` linear constant this section
 originally described. `generate_regions.py` now assigns a real saturating
-B-H curve (GetDP's bundled `SteelGeneric`), because a constant `mu_r` has
+B-H curve (ASTM A36, via an AISI 1008 proxy), because a constant `mu_r` has
 no saturation cap and was reporting peak `|B|` near 9.7 T — a real core
 would never reach that; it would saturate, its effective `mu_r` would
 collapse toward 1 in the saturated region, and flux would redistribute in
@@ -352,7 +352,8 @@ operating point, it barely matters. The magnetic circuit is
 **gap-dominated**: the iron contributes ~2.5 of the ~900 A-turns needed
 for a 300 G channel field, so the answer is insensitive to iron
 permeability as long as it's large. At the design excitation peak iron
-`|B|` is 0.875 T — below the knee, where the curve is nearly straight —
+`|B|` is 1.023 T — below the knee, though now past the curve's own
+permeability peak —
 and the nonlinear result matches a linear-scaled prediction from the old
 `mur_iron=1000` run to 0.4%.
 

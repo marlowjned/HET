@@ -12,8 +12,8 @@ Scope and why it's this simple:
   isolated (no conduction path to a mount). Every watt therefore leaves by
   radiation from the outer envelope, which makes the assembly temperature
   a near-pure radiation balance:  eps*sigma*A*(T^4 - T_amb^4) = Q.
-- **Iron is effectively isothermal.** Conduction through the iron at these
-  power levels costs ~2 K end to end (k ~ 50 W/m-K, ~5 cm path, a few
+- **Iron is effectively isothermal.** Conduction through A36 at these
+  power levels costs ~2 K end to end (k = 50 W/m-K, ~5 cm path, a few
   watts), which is far below the uncertainty in emissivity, so the iron
   and everything bolted to it is one node.
 - **The coils are the only heat source**, and the only place a real
@@ -56,8 +56,19 @@ EPS_GAP = 0.80              # coil <-> iron surfaces, for the radiation-only cas
 LIMITS = {
     "PTFE chamber": 260.0,
     "fiberglass wire insulation": 200.0,   # conservative; some serve rates far higher
-    "soft iron (Curie)": 770.0,
+    "ASTM A36 service limit": 400.0,       # makeitfrom.com max operating temp
+    "ASTM A36 (Curie)": 770.0,             # magnetic circuit fails well before this
 }
+
+# ASTM A36 structural steel, the pole/plate material (SendCutSend hot-rolled
+# pickled-and-oiled -- the only grade they stock thick enough for the
+# 0.375in plates). Source: makeitfrom.com ASTM A36 (SS400, S275).
+IRON_K = 50.0          # W/m-K thermal conductivity
+IRON_CP = 470.0        # J/kg-K specific heat
+IRON_RHO = 7900.0      # kg/m^3 density
+# Not used by this steady-state model -- CP and RHO are here for whenever a
+# transient (warm-up time) version is wanted, which is the obvious next step
+# if anyone cares how long a test run takes to reach these temperatures.
 
 
 @dataclass
@@ -129,7 +140,7 @@ AWG20_BARE = 0.812e-3
 INNER = Coil("inner", 1, 260, AWG20_BARE, 0.0127, 0.0174625, 0.0508)
 OUTER = Coil("outer", 4, 165, AWG20_BARE, 0.0127, 0.019050, 0.0508)
 COILS = [INNER, OUTER]
-I_DESIGN = 1.25
+I_DESIGN = 1.30
 
 for _c in COILS:
     assert _c.packing < 0.75, (

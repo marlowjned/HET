@@ -47,12 +47,13 @@ SAME y-span (a ring around the center pole), so sign is now one constant
 per pole TYPE (all outer poles same polarity, center opposite), see
 EXCITATION below.
 
-A_cross (winding cross-section area, for the Js[] current-density
-formula) uses the plain annulus formula from the INPUT id/od parameters
-directly (pi*((od/2)^2-(id/2)^2)), not a measurement of the imported
-solid's actual volume/height -- those parameters are the exact values sent
-to Onshape, so they're more trustworthy than re-deriving area from a solid
-that might carry small fillets/rounds Onshape adds at real edges.
+A_cross (winding cross-section area, for the Js[] current-density formula)
+is the coil's r-y SECTION -- radial thickness x height -- taken via
+Pappus's theorem from the solid's own volume. It is NOT the annulus
+pi*((od/2)^2-(id/2)^2), which is the area for AXIAL current flow and was
+used here in error until 2026-09-19; the current is azimuthal. See
+detect_channel_cavity's sibling note and gmsh_getdp/README.md
+"The A_cross bug".
 """
 import argparse
 import math
@@ -83,27 +84,23 @@ CHAMBER_SPACER_NAME = "chamber_spacer"
 CHAMBER_NAME = "chamber"
 COIL_NAMES = {"inner_coil", "outer_coil"}
 
-# Current sized for the ~300 G channel-exit target (field_quality.py's
-# target definition), replacing the inherited 5 A placeholder: a lumped
-# reluctance check (23.9 kA/m across the 37.4mm inner-core-to-outer-core
-# air path, iron drop negligible at ~0.1 T core flux) needs only ~450-900
-# A-turns, vs. the 2500 A-turns 5 A was supplying. The linear FEM sweep
-# agrees independently (channel |B| mean 80.6 mT at 5 A -> 1.86 A for
-# 300 G). Driving 5 A also put peak iron |B| at 2.16 T, past the B-H knee,
-# which is what forced the 16-stage load-stepping the nonlinear solve
-# needed; at 2 A the peak is ~0.86 T and the iron stays effectively linear.
-# Turns unchanged. Opposite polarity so flux arcs across the gap
-# between inner and outer poles instead of just adding axially -- see
-# HOW_IT_WORKS.md sec. 5 for the physical reasoning.
-# Turns are a real winding design now, not the inherited 300/200 placeholder:
+# Sized for the ~300 G channel-exit target (field_quality.py's target
+# definition), replacing the inherited 5 A / 300t / 200t placeholder.
+# 1.30 A measured against the AISI 1008 iron curve; peak iron |B| is
+# 1.023 T, which is past 1008's peak-permeability point (0.865 T) and so
+# the solve is noticeably stiffer than it was on the old generic curve.
+# Opposite polarity so flux arcs across the gap between inner and outer
+# poles rather than adding axially -- see HOW_IT_WORKS.md sec. 5.
+#
+# Turns are a real winding design, not the inherited 300/200 placeholder:
 # AWG 20 single-glass-served wire fills the inner window at 260 turns (5
 # layers of 52), and the outer coils are wound to 165 so that one series
 # current gives the ~1.58 A-turn ratio the field wants. Only the A-turn
 # product reaches the solve, so a different gauge from the same trade study
 # changes the current/voltage split without changing the field at all.
 EXCITATION = {
-    "inner_coil": dict(turns=260, current=1.25, polarity=-1),
-    "outer_coil": dict(turns=165, current=1.25, polarity=+1),
+    "inner_coil": dict(turns=260, current=1.30, polarity=-1),
+    "outer_coil": dict(turns=165, current=1.30, polarity=+1),
 }
 
 

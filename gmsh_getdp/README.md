@@ -45,19 +45,24 @@ read results back), not the numerical engine.
   field at `I_center = I_outer` -- see "Current ratio sweep" below. **Its
   2-basis-solve superposition trick assumes a linear material**, which
   looked fatal once Iron became nonlinear -- but at the real ~300 G design
-  point the iron peaks at 0.875 T, well below the B-H knee, so it behaves
-  linearly and the trick is valid again there (confirmed: the nonlinear
-  peak matches a linear-scaled prediction to 0.4%). Re-check that if a
-  future design point pushes the iron toward saturation.
-- **Materials**: nonlinear iron (generic soft-steel B-H curve) replaces
-  the `mur_iron = 1000` linear placeholder, and **converges** -- 12
-  Picard iterations, 28 min wall, 806 MB peak. See "Nonlinear iron
+  point the iron peaks at 1.023 T, below the B-H knee, so it behaves
+  near-linearly and the trick is roughly valid there. Note this got
+  *weaker* when the material became A36-proxy rather than the old generic
+  curve: 1.023 T is past that curve's peak-permeability point (0.865 T),
+  so superposition is now an approximation rather than near-exact.
+  Re-check it if a design point pushes the iron further.
+- **Materials**: nonlinear iron (ASTM A36, run on a proxy B-H curve) replaces
+  the `mur_iron = 1000` linear placeholder, and **converges** -- 33
+  Picard iterations, 68 min wall, 806 MB peak. See "Nonlinear iron
   (B-H curve)" below for how the excitation, not the method, was what
-  made that work.
-- **Excitation**: 1.25 A per coil (inner 260 t, outer 165 t) -- a real
+  made that work. The iteration count roughly tripled when the material
+  went from the generic curve to the A36 proxy: the design's peak iron
+  field sits past that curve's permeability peak, where Picard contracts
+  slowly. Worth budgeting for in the geometry sweep.
+- **Excitation**: 1.30 A per coil (inner 260 t, outer 165 t) -- a real
   winding design sized to the ~300 G channel-exit target, not the old
-  inherited 300/200 at 5 A. Measured 300 G at the exit plane. See
-  "Operating point" below.
+  inherited 300/200 at 5 A. Measured 288.6 G at the exit plane at 1.25 A,
+  hence 1.30 A for 300 G. See "Operating point" below.
 - **Channel ROI**: the channel bounds in `assembly_params.txt` are the
   real plasma cavity between the chamber's ceramic walls, not the chamber
   part's bounding annulus (which contained iron). See "Channel ROI" below.
@@ -186,9 +191,9 @@ be legitimate at the real design point anyway.
 
 Target: **~300 G radially at the channel exit**, tapering toward the
 anode (the magnetic-lens shape `assembly/field_quality.py` scores
-against). The design point that meets it is **325 A-turns on the inner
-pole and 206 on each outer pole** -- realized as 260 / 165 turns at
-1.25 A, wired in series.
+against). The design point that meets it is **338 A-turns on the inner
+pole and 215 on each outer pole** -- realized as 260 / 165 turns at
+1.30 A, wired in series.
 
 Two independent derivations agree:
 
@@ -197,8 +202,10 @@ Two independent derivations agree:
   depending on how much of the path holds full field. The iron leg
   contributes ~2.5 A-turns (227mm at ~0.1 T), i.e. nothing -- this is a
   gap-dominated circuit.
-- **The solve itself**: 307.6 G at the exit plane at 1.28 A, peaking at
-  328.8 G about 3.5mm inboard of it. Scaling to 300 G gives 1.25 A.
+- **The solve itself** (A36-proxy iron): 288.6 G at the exit plane at
+  1.25 A, peaking at 308.5 G about 3.5mm inboard of it. Scaling to 300 G
+  gives 1.30 A. Note the iron is no longer strictly linear at this point,
+  so that scaling is slightly optimistic.
 
 For contrast, the original placeholder was 5 A at 300/200 turns,
 inherited from `../matlab/het_solenoid_bfield.m`'s parametric check and
@@ -223,7 +230,7 @@ one series current gives the 1.58 A-turn ratio the field wants.
 |---|---|---|---|---|---|---|---|
 | 16 | 105 | 67 | 3 / 2 | 3.10 A | 1.46 V | 1.69 V | 5.2 W |
 | 18 | 172 | 109 | 4 / 3 | 1.89 A | 2.30 V | 2.67 V | 5.0 W |
-| **20** | **260** | **165** | **5 / 4** | **1.25 A** | **3.67 V** | **4.25 V** | **5.3 W** |
+| **20** | **260** | **165** | **5 / 4** | **1.30 A** | **3.81 V** | **4.42 V** | **5.8 W** |
 | 22 | 384 | 244 | 6 / 4 | 0.85 A | 5.84 V | 6.76 V | 5.7 W |
 | 24 | 624 | 396 | 8 / 6 | 0.52 A | 9.26 V | 10.72 V | 5.6 W |
 
@@ -255,6 +262,63 @@ turn counts -- a real wire spec could move N by 10-20%, which moves the
 current, not the field or the power. Wiring in series is what forces
 equal current through coils of unequal resistance; running the coils at
 different currents needs two supplies or a trim resistor on one leg.
+
+## Iron material data (ASTM A36)
+
+The poles and plates are ASTM A36, from SendCutSend hot-rolled
+pickled-and-oiled stock -- their 1008 cold rolled tops out at 0.135 in,
+too thin for anything here, and A36 is stocked at exactly the 0.375 in
+plate thickness. See `../MATERIALS.md` for the full property table and
+sourcing. Magnetic data is a 19-point DC
+magnetization curve inline in `assembly/generate_regions.py`; thermal and
+physical properties are in `../thermal/radiation_balance.py`.
+
+| property | value | use |
+|---|---|---|
+| saturation (B at 1000 Oe) | 2.165 T | magnetics (proxy curve) |
+| peak relative permeability | 2164, at H = 318 A/m | magnetics (proxy curve) |
+| mu_r at this design's peak iron field | ~1935 at 1.023 T | magnetics (proxy curve) |
+| thermal conductivity | 50 W/m-K | justifies the isothermal-iron assumption |
+| specific heat | 470 J/kg-K | transient model, when one exists |
+| density | 7900 kg/m^3 | as above |
+| max service temperature | 400 C | thermal limit |
+| Curie point | ~770 C | magnetic circuit fails well before this |
+
+**Read the provenance before trusting the magnetic curve.** It is **AISI
+1008 data used as a proxy for A36**, deliberately not relabelled -- no
+numeric A36 table could be obtained. The 1008 points themselves come from
+the Ansys Maxwell SV material library, transcribed via a public
+engineering forum; the primary source could not be re-fetched (403).
+Neither a measurement of A36 nor of the actual BPL-700 stock.
+
+A36 carries up to 0.26% carbon against 1008's ~0.08% plus up to 1.2% Mn,
+so **real A36 is less permeable than this curve and the model is
+optimistic about the iron** -- plausibly a few percent of channel field,
+i.e. a design current nearer 1.35 A. See `../MATERIALS.md`.
+
+What supports them being genuine digitized data: every H value is an exact
+Oersted multiple (2, 4, 6, 8, 10, 20, 40 ... 5000 Oe), which is how
+pre-SI magnetization tables were published; the curve is monotonic in both
+variables; differential permeability rises then falls as a real
+magnetization curve must; and 2.165 T at 1000 Oe sits squarely in the
+2.1-2.2 T band expected of low-carbon steel.
+
+What should keep you cautious:
+
+- **1008 is not an electrical steel.** ASTM imposes no magnetic
+  requirement on it at all, so two suppliers' 1008 can differ
+  substantially and nothing obliges either to match this curve.
+- **Processing history dominates.** Peak mu_r of 2164 is characteristic of
+  as-rolled rather than annealed material; annealed low-carbon steel
+  reaches 3000-5000. If the real poles are annealed they will outperform
+  this model slightly.
+
+Fortunately this matters less here than it would in most magnetic designs,
+because the circuit is gap-dominated: the iron carries ~2.5 of the ~900
+A-turns. Switching from the old generic curve to 1008 cut permeability at
+the operating point by 2.7x (mu_r 5700 -> 2150) and moved the channel
+field by well under a percent. A measured curve on the actual stock is
+still the only way to do better, but it would buy very little.
 
 ## The A_cross bug (fixed 2026-09-19, worth knowing about)
 
@@ -367,22 +431,21 @@ while the excitation was still the inherited 5 A placeholder, and the
 fix turned out not to be a better nonlinear method but a correct
 operating point. At 5 A the poles are driven to 2.16 T, past the B-H
 knee, and no amount of load-stepping made that cheap. At the real
-~300 G design current (1.25 A, 325/206 A-turns) peak iron is 0.875 T,
+~300 G design current (1.30 A, 338/215 A-turns) peak iron is 1.023 T,
 the material is effectively linear, and the solve converges in 12 Picard
 iterations / 28 min / 806 MB with a 2-stage ramp. The debugging history below is
 kept because the failure modes are informative, not because the
 16-stage ramp is still needed.
 
-- **Material**: generic soft steel, using GetDP's own bundled
-  `SteelGeneric` dataset (`tools/getdp-3.5.0-Windows64/templates/
-  Lib_Materials.pro`, 49-point H/B table) -- copied inline into
-  `generate_regions.py` (not `Include`d from `tools/`, which is
-  gitignored/machine-local) rather than sourcing a real alloy datasheet,
-  since the actual BPL-700 pole material isn't specified. Reluctivity is
-  built as a piecewise-linear interpolation of `H/B` vs `B^2`
-  (`InterpolationLinear[SquNorm[$1]]{...}`, the same derivation
-  `Lib_Materials.pro` itself uses), assigned to `Iron` only --
-  `Air`/`Windings` stay linear.
+- **Material**: **ASTM A36**, modelled with a 19-point AISI 1008 proxy H/B table inline in
+  `generate_regions.py`. This replaced GetDP's bundled generic
+  `SteelGeneric` dataset, which was a stand-in from when the pole material
+  was unspecified. Reluctivity is built as a piecewise-linear
+  interpolation of `H/B` vs `B^2`
+  (`InterpolationLinear[SquNorm[$1]]{...}`, the derivation GetDP's own
+  `Lib_Materials.pro` uses), assigned to `Iron` only -- `Air`/`Windings`
+  stay linear. See "Iron material data" below for provenance and the
+  caveats, which are real.
 - **Formulation**: `magnetostatics_assembly.pro`'s single
   `nu[] * Dof{d a}` Galerkin term is now split into a linear part
   (`Air+Windings`) and a nonlinear (Picard) part over `Iron`
@@ -442,7 +505,7 @@ kept because the failure modes are informative, not because the
   above were chasing a saturation regime the design never called for. A
   lumped reluctance check against the 300 G channel target (see
   "Operating point" below) needs ~450-900 A-turns; 5 A was supplying
-  2500. Dropping to the real design A-turns puts peak iron at 0.875 T -- below the knee,
+  2500. Dropping to the real design A-turns puts peak iron at 1.023 T -- below the knee,
   where this B-H curve is nearly straight -- and the same formulation,
   mesh and Picard iteration then converge easily:
 
@@ -451,14 +514,14 @@ kept because the failure modes are informative, not because the
   | Picard iterations | hit caps, oscillated | 12 total, monotonic |
   | wall time | ~97 min / killed at 53 min | 28 min |
   | peak memory | host dipped to ~4.5 GB free | 806 MB |
-  | peak iron \|B\| | 2.157 T (past knee) | 0.875 T |
+  | peak iron \|B\| | 2.157 T (past knee) | 1.023 T |
   | result | garbage (6.5 T) / unfinished | converged, rel 9.9e-5 |
 
   Contraction was clean throughout: stage 0 converged in 3 iterations
   (48x/27x/23x per step), stage 1 in 9, never oscillating. The host
   memory pressure that killed the second attempt simply never arises with
   ~1/8th as many large factorizations.
-- **A useful corollary**: at 0.875 T the nonlinear peak matches a
+- **A useful corollary**: on the old generic curve the nonlinear peak matched a
   linear-scaled prediction from the old `mur_iron=1000` run to 0.4%.
   That is not a coincidence -- this is a gap-dominated circuit (iron drop
   ~2.5 of ~900 A-turns), so the answer is insensitive to iron

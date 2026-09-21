@@ -21,30 +21,31 @@ Group {
 Function {
   mu0 = 1.2566370614359173e-06;
 
-  // Generic soft steel B-H curve (GetDP's bundled SteelGeneric material --
-  // see this script's module docstring for the exact source/derivation).
-  SteelGeneric_H() = {0.0, 5.5023, 11.018, 16.562, 22.149, 27.798, 33.528, 39.363, 45.335, 51.479, 57.842, 64.481, 71.47, 78.906, 86.91, 95.644, 105.32, 116.2, 128.68, 143.22, 160.5, 181.39, 207.11, 239.32, 280.28, 333.14, 402.31, 493.95, 616.78, 783.2, 1011.0, 1325.7, 1764.5, 2381.9, 3257.8, 4511.0, 6318.7, 8947.8, 12802.0, 18500.0, 26989.0, 39739.0, 59047.0, 88520.0, 133880.0, 204250.0, 314340.0, 487960.0, 764030.0};
-  SteelGeneric_B() = {0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3, 1.35, 1.4, 1.45, 1.5, 1.55, 1.6, 1.65, 1.7, 1.75, 1.8, 1.85, 1.9, 1.95, 2.0, 2.05, 2.1, 2.15, 2.2, 2.25, 2.3, 2.35, 2.4};
-  SteelGeneric_B2() = SteelGeneric_B()^2;
-  SteelGeneric_nu_list() = SteelGeneric_H() / SteelGeneric_B();
-  SteelGeneric_nu_list(0) = SteelGeneric_nu_list(1);  // avoid 0/0 at B=0
-  SteelGeneric_nu_b2_list() = ListAlt[SteelGeneric_B2(), SteelGeneric_nu_list()];
-  SteelGeneric_nu[] = InterpolationLinear[SquNorm[$1]]{SteelGeneric_nu_b2_list()};
+  // Iron B-H curve. The hardware is ASTM A36; these are AISI 1008
+  // points used as a PROXY -- see generate_regions.py for why, which
+  // way the error runs, and its rough size.
+  AISI1008_H() = {0.0, 159.2, 318.3, 477.5, 636.6, 795.8, 1591.5, 3183.1, 4774.6, 6366.2, 7957.7, 15915.5, 31831.0, 47746.5, 63662.0, 79577.5, 159155.0, 318310.0, 397887.0};
+  AISI1008_B() = {0.0, 0.2402, 0.8654, 1.1106, 1.2458, 1.331, 1.5, 1.6, 1.683, 1.741, 1.78, 1.905, 2.025, 2.085, 2.13, 2.165, 2.28, 2.485, 2.585};
+  AISI1008_B2() = AISI1008_B()^2;
+  AISI1008_nu_list() = AISI1008_H() / AISI1008_B();
+  AISI1008_nu_list(0) = AISI1008_nu_list(1);  // avoid 0/0 at B=0
+  AISI1008_nu_b2_list() = ListAlt[AISI1008_B2(), AISI1008_nu_list()];
+  AISI1008_nu[] = InterpolationLinear[SquNorm[$1]]{AISI1008_nu_b2_list()};
 
   nu[Air]  = 1 / mu0;
-  nu[Iron] = SteelGeneric_nu[$1];  // nonlinear -- see magnetostatics_assembly.pro
+  nu[Iron] = AISI1008_nu[$1];  // nonlinear -- see magnetostatics_assembly.pro
                                    // for the Vol_L_Mag/Vol_NL_Mag Galerkin split this requires
   nu[Windings] = 1 / mu0;  // copper, non-magnetic
 
-  // Winding0: pole=inner_coil turns=260 I=1.28A A_cross=2.447257e-04 polarity=-1 -> Jmag=-1.359890e+06 A/m^2
-  Js[Winding0] = $IFrac * (-1359889.7783958644 / Sqrt[(X[]-(-0.00016711298290286914))^2 + (Z[]-(-6.158486390058627e-16))^2]) * Vector[(Z[]-(-6.158486390058627e-16)), 0, -(X[]-(-0.00016711298290286914))];
-  // Winding1: pole=outer_coil turns=165 I=1.28A A_cross=3.262948e-04 polarity=+1 -> Jmag=6.472674e+05 A/m^2
-  Js[Winding1] = $IFrac * (647267.4354726049 / Sqrt[(X[]-(0.04427401054092428))^2 + (Z[]-(-0.044450000000004763))^2]) * Vector[(Z[]-(-0.044450000000004763)), 0, -(X[]-(0.04427401054092428))];
-  // Winding2: pole=outer_coil turns=165 I=1.28A A_cross=3.262948e-04 polarity=+1 -> Jmag=6.472674e+05 A/m^2
-  Js[Winding2] = $IFrac * (647267.4354726049 / Sqrt[(X[]-(-0.04462598945906393))^2 + (Z[]-(0.04444999999997634))^2]) * Vector[(Z[]-(0.04444999999997634)), 0, -(X[]-(-0.04462598945906393))];
-  // Winding3: pole=outer_coil turns=165 I=1.28A A_cross=3.262948e-04 polarity=+1 -> Jmag=6.472674e+05 A/m^2
-  Js[Winding3] = $IFrac * (647267.4354726049 / Sqrt[(X[]-(-0.04462598945904972))^2 + (Z[]-(-0.04444999999999766))^2]) * Vector[(Z[]-(-0.04444999999999766)), 0, -(X[]-(-0.04462598945904972))];
-  // Winding4: pole=outer_coil turns=165 I=1.28A A_cross=3.262948e-04 polarity=+1 -> Jmag=6.472674e+05 A/m^2
-  Js[Winding4] = $IFrac * (647267.4354726049 / Sqrt[(X[]-(0.04427401054092428))^2 + (Z[]-(0.04444999999999055))^2]) * Vector[(Z[]-(0.04444999999999055)), 0, -(X[]-(0.04427401054092428))];
+  // Winding0: pole=inner_coil turns=260 I=1.3A A_cross=2.447257e-04 polarity=-1 -> Jmag=-1.381138e+06 A/m^2
+  Js[Winding0] = $IFrac * (-1381138.0561832997 / Sqrt[(X[]-(-0.00016711298290286914))^2 + (Z[]-(-6.158486390058627e-16))^2]) * Vector[(Z[]-(-6.158486390058627e-16)), 0, -(X[]-(-0.00016711298290286914))];
+  // Winding1: pole=outer_coil turns=165 I=1.3A A_cross=3.262948e-04 polarity=+1 -> Jmag=6.573810e+05 A/m^2
+  Js[Winding1] = $IFrac * (657380.9891518643 / Sqrt[(X[]-(0.04427401054092428))^2 + (Z[]-(-0.044450000000004763))^2]) * Vector[(Z[]-(-0.044450000000004763)), 0, -(X[]-(0.04427401054092428))];
+  // Winding2: pole=outer_coil turns=165 I=1.3A A_cross=3.262948e-04 polarity=+1 -> Jmag=6.573810e+05 A/m^2
+  Js[Winding2] = $IFrac * (657380.9891518643 / Sqrt[(X[]-(-0.04462598945906393))^2 + (Z[]-(0.04444999999997634))^2]) * Vector[(Z[]-(0.04444999999997634)), 0, -(X[]-(-0.04462598945906393))];
+  // Winding3: pole=outer_coil turns=165 I=1.3A A_cross=3.262948e-04 polarity=+1 -> Jmag=6.573810e+05 A/m^2
+  Js[Winding3] = $IFrac * (657380.9891518643 / Sqrt[(X[]-(-0.04462598945904972))^2 + (Z[]-(-0.04444999999999766))^2]) * Vector[(Z[]-(-0.04444999999999766)), 0, -(X[]-(-0.04462598945904972))];
+  // Winding4: pole=outer_coil turns=165 I=1.3A A_cross=3.262948e-04 polarity=+1 -> Jmag=6.573810e+05 A/m^2
+  Js[Winding4] = $IFrac * (657380.9891518643 / Sqrt[(X[]-(0.04427401054092428))^2 + (Z[]-(0.04444999999999055))^2]) * Vector[(Z[]-(0.04444999999999055)), 0, -(X[]-(0.04427401054092428))];
 }
 
