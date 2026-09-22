@@ -65,14 +65,26 @@ Include "assembly_regions_generated.pro";
 // LinearIron is set by assembly_regions_generated.pro (generate_regions.py's
 // iron_mur option). With a constant-mu iron there is nothing to ramp: one
 // stage, and the Picard loop exits after its first residual check.
+//
+// FineRamp (-setnumber FineRamp 1): the 2-stage ramp STALLED on the thinnest
+// core (0.750in, 0.74 T shaft): 50% converged in 9 iterations, but the jump
+// 50% -> 100% sat at rel. residual ~0.11 for all 60 iterations. Finer steps
+// above 50% keep each Picard step close to its starting field.
+DefineConstant[ FineRamp = 0 ];
 If(LinearIron)
 Function {
   RampFrac() = {1.0};
 }
 Else
+If(FineRamp)
+Function {
+  RampFrac() = {0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0};
+}
+Else
 Function {
   RampFrac() = {0.5, 1.0};
 }
+EndIf
 EndIf
 
 DefineConstant[

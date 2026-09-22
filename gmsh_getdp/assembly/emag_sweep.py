@@ -38,6 +38,11 @@ Usage (from gmsh_getdp/assembly/):
   python emag_sweep.py                 # full grid
   python emag_sweep.py --only h2.000_ci1.000_oo1.500
   python emag_sweep.py --validate      # linear vs committed nonlinear, baseline geometry
+  python emag_sweep.py --nonlinear h2.000_ci0.750_oo1.500 [--fine-ramp]
+      # nonlinear re-solve of one point vs its linear result; run
+      # nl_watchdog.py alongside it to kill a stalling Picard iteration.
+      # Neither the 2-stage nor the 9-stage ramp converges at full current
+      # on this point (see gmsh_getdp/README.md) -- Newton is the next step.
 """
 import argparse
 import csv
@@ -112,12 +117,12 @@ def rewrite_channel(params_path):
     Path(params_path).write_text("\n".join(out) + "\n")
 
 
-def run_getdp(run_dir):
+def run_getdp(run_dir, extra_args=()):
     shutil.copy(PRO_FILE, run_dir / PRO_FILE.name)
     t0 = time.time()
     with open(run_dir / "getdp.log", "w") as log:
         rc = subprocess.run([str(GETDP_EXE), PRO_FILE.name, "-msh", "assembly.msh",
-                             "-solve", "Res_a", "-pos", "Map_b"],
+                             "-solve", "Res_a", "-pos", "Map_b", *extra_args],
                             cwd=run_dir, stdout=log, stderr=subprocess.STDOUT).returncode
     if rc != 0:
         raise RuntimeError(f"getdp failed (exit {rc}), see {run_dir / 'getdp.log'}")
@@ -255,7 +260,7 @@ def extract(run_dir, geo, excitation):
     return m
 
 
-def run_point(h, ci, oo, force=False, iron_mur=IRON_MUR, keep_fields=False, suffix=""):
+def run_point(h, ci, oo, force=False, iron_mur=IRON_MUR, keep_fields=False, suffix="", getdp_args=()):
     geo = geometry(h, ci, oo)
     run_dir = RUNS_DIR / (tag_for(h, ci, oo) + suffix)
     mpath = run_dir / "metrics.json"
@@ -270,7 +275,7 @@ def run_point(h, ci, oo, force=False, iron_mur=IRON_MUR, keep_fields=False, suff
     generate_regions_pro(params, EXCITATION, out_path=str(run_dir / "assembly_regions_generated.pro"),
                          iron_mur=iron_mur)
     t_build = time.time() - t0
-    t_solve = run_getdp(run_dir)
+    t_solve = run_getdp(run_dir, getdp_args)
     m = extract(run_dir, geo, EXCITATION)
     m.update(build_s=round(t_build, 1), solve_s=round(t_solve, 1), iron_mur=iron_mur)
     mpath.write_text(json.dumps(m, indent=2))
@@ -318,6 +323,8 @@ def main():
     ap.add_argument("--only", help="run a single tag, e.g. h2.000_ci1.000_oo1.500")
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--validate", action="store_true")
+    ap.add_argument("--fine-ramp", action="store_true",
+                    help="with --nonlinear: 9-stage load ramp (0.5..1.0) instead of 2 stages")
     ap.add_argument("--nonlinear", metavar="TAG",
                     help="re-solve one swept geometry with the nonlinear B-H iron and compare to its "
                          "linear result, e.g. h1.125_ci0.750_oo1.500 (the highest-core-flux point)")
@@ -329,7 +336,9 @@ def main():
     if args.nonlinear:
         h, ci, oo = (float(p[1:] if p[0] == "h" else p[2:]) for p in args.nonlinear.split("_"))
         lin = run_point(h, ci, oo)
-        nl = run_point(h, ci, oo, iron_mur=None, suffix="_nonlinear", force=args.force)
+        nl = run_point(h, ci, oo, iron_mur=None, force=args.force,
+                       suffix="_nonlinear_fine" if args.fine_ramp else "_nonlinear",
+                       getdp_args=("-setnumber", "FineRamp", "1") if args.fine_ramp else ())
         for k in ("B_exit_G_at_base", "inner_shaft_B_max_T", "outer_shaft_B_max_T", "iron_B_p999_T",
                   "radial_purity_pct"):
             # both extracted at the SAME (baseline) excitation before scaling, so
@@ -354,7 +363,7 @@ def main():
                 gmsh.finalize()
             shutil.rmtree(RUNS_DIR / tag_for(*p), ignore_errors=True)
         done = [json.loads(f.read_text()) for f in RUNS_DIR.glob("h*_ci*_oo*/metrics.json")
-                if not f.parent.name.endswith(("_validate", "_nonlinear"))]
+                if not f.parent.name.endswith(("_validate", "_nonlinear", "_nonlinear_fine"))]
         if done:
             write_csv(done)
     print(f"\nWrote {RESULTS_CSV}")

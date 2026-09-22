@@ -221,8 +221,19 @@ core): the 50% stage converged in 9 Picard iterations, but the 100% stage
 **stalled** at rel. residual ~0.11 for all 60 iterations (2.4 h) -- not
 converged. Unconverged, it matches linear to 0.3% at the exit and puts the
 inner core 3.4% lower; its p99.9 iron |B| is 13% higher (a few corner
-elements, plausibly where Picard stalls). A real check needs a finer ramp
-or Newton.
+elements, plausibly where Picard stalls).
+
+**Fine ramp tried (`--fine-ramp`, 9 stages 0.5..1.0), also terminated.**
+Stages converged at 50% (9 iterations), 60% (16) and 70% (35), but Picard
+contraction fell stage by stage (~2.3x -> 1.7x -> 1.2x per iteration), and
+at 75% it dropped to ~1.1x (rel 9.9e-3 at iteration 13), projecting past the
+60-iteration cap. Meanwhile getdp.exe grew to 13 GB resident (vs ~0.8 GB for
+a 2-stage solve) and slowed to >3 min/iteration -- the repeated
+Generate/Solve memory growth noted under "Nonlinear iron". Killed per the
+watchdog criteria (`nl_watchdog.py`). Nothing is saved from the converged
+stages because `SaveSolution` only runs at the end. So a finer ramp is not
+the fix; Newton (with the `dhdb[]` tangent) is the remaining option, and
+saving a solution per stage would make a partial run worth something.
 
 Two pipeline fixes came out of it: `build_assembly.py`'s mesh fine size is
 now capped at the baseline value (a thinner core coarsened the whole mesh,
