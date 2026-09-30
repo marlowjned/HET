@@ -59,10 +59,16 @@ read results back), not the numerical engine.
   went from the generic curve to the A36 proxy: the design's peak iron
   field sits past that curve's permeability peak, where Picard contracts
   slowly. Worth budgeting for in the geometry sweep.
-- **Excitation**: 1.30 A per coil (inner 260 t, outer 165 t) -- a real
-  winding design sized to the ~300 G channel-exit target, not the old
-  inherited 300/200 at 5 A. Measured 288.6 G at the exit plane at 1.25 A,
-  hence 1.30 A for 300 G. See "Operating point" below.
+- **Excitation**: 338.0 / 214.5 ampere-turns, sized to the ~300 G
+  channel-exit target, not the old inherited 300/200 at 5 A. Measured
+  288.6 G at the exit plane at 1.25 A in the original series wiring, hence
+  the A-turns for 300 G. See "Operating point" below. As of 2026-09-30 those
+  A-turns are delivered by **inner 280 t at 1.207 A and outer 336 t at
+  0.638 A on two independent channels** (AWG 20 polyimide) rather than
+  260 t / 165 t at 1.30 A in series -- the same A-turns, so every solved
+  field is unaffected, but a wire that can actually be bought. See
+  "Solenoid winding design" below and
+  `../sizing/WIRE_AND_SUPPLY.md`.
 - **Channel ROI**: the channel bounds in `assembly_params.txt` are the
   real plasma cavity between the chamber's ceramic walls, not the chamber
   part's bounding annulus (which contained iron). See "Channel ROI" below.
@@ -246,8 +252,10 @@ initialized made the *next* build silently write an empty mesh).
 Target: **~300 G radially at the channel exit**, tapering toward the
 anode (the magnetic-lens shape `assembly/field_quality.py` scores
 against). The design point that meets it is **338 A-turns on the inner
-pole and 215 on each outer pole** -- realized as 260 / 165 turns at
-1.30 A, wired in series.
+pole and 215 on each outer pole** -- realized as 280 turns at 1.207 A and
+336 turns at 0.638 A on two independent channels (AWG 20 polyimide; see
+"Solenoid winding design"). The A-turns are what the field responds to, so
+the derivations below predate that wiring change and are unaffected by it.
 
 Two independent derivations agree:
 
@@ -270,28 +278,47 @@ intractable (see "Nonlinear iron" above).
 ## Solenoid winding design
 
 Only the **A-turn product** reaches the FEM (as a bulk current density,
-see HOW_IT_WORKS.md sec. 2), so the wire choice below changes the
-current/voltage split and nothing about the field. Every row delivers the
-same 325/206 A-turns and therefore the same 300 G.
+see HOW_IT_WORKS.md sec. 2), so the wire choice changes the
+current/voltage split and nothing about the field. Every row below
+delivers the same 338/214.5 A-turns and therefore the same 300 G.
 
-Windows measured from the real CAD coil solids: **4.76 x 50.8 mm**
-(inner) and **6.35 x 50.8 mm** (outer); mean turn lengths 94.8 and
-99.7 mm. Turn counts assume fiberglass-served wire, hexagonally nested,
-with the inner coil wound full and the outer coils wound to 0.63x that so
-one series current gives the 1.58 A-turn ratio the field wants.
+Full specification, including procurement and the power supply:
+**[`../sizing/WIRE_AND_SUPPLY.md`](../sizing/WIRE_AND_SUPPLY.md)**.
+Computed by `../sizing/winding_design.py`; wire dimensions in
+`../sizing/wire_data.py`.
 
-| AWG | N inner | N outer | layers in/out | current | V @ 20 C | V @ 60 C | total P |
-|---|---|---|---|---|---|---|---|
-| 16 | 105 | 67 | 3 / 2 | 3.10 A | 1.46 V | 1.69 V | 5.2 W |
-| 18 | 172 | 109 | 4 / 3 | 1.89 A | 2.30 V | 2.67 V | 5.0 W |
-| **20** | **260** | **165** | **5 / 4** | **1.30 A** | **3.81 V** | **4.42 V** | **5.8 W** |
-| 22 | 384 | 244 | 6 / 4 | 0.85 A | 5.84 V | 6.76 V | 5.7 W |
-| 24 | 624 | 396 | 8 / 6 | 0.52 A | 9.26 V | 10.72 V | 5.6 W |
+**Wire: AWG 20 heavy-build aromatic polyimide, NEMA MW 16-C, 240 C.** The
+previous fiberglass-served specification was withdrawn on 2026-09-30: NEMA
+MW 1000 tabulates round glass-served wire only down to AWG 12, nobody
+stocks it in any gauge, and the round product is Class 155 rather than the
+200 C assumed. See `../MATERIALS.md` "Magnet wire".
 
-AWG 20 is what `build_assembly.py`'s `EXCITATION` is set to. Switching
-rows needs no re-solve -- just the turns/current pair.
+Windows from the real CAD coil solids, less a 0.15 mm ground-insulation
+allowance over the bare core: **4.61 x 50.8 mm** (inner) and
+**6.20 x 50.8 mm** (outer). Both coils are wound **full** on **two
+independent constant-current channels**, so no turn count has to be
+contrived to hit the 1.58 A-turn ratio.
 
-**Dissipation is ~5 W in every row**, which is the useful structural
+| AWG | N in/out | I inner | I outer | V in/out @ 20 C | total P | wire |
+|---|---|---|---|---|---|---|
+| 16 | 108 / 144 | 3.13 A | 1.49 A | 0.41 / 1.08 V | 2.89 W | 67 m |
+| 18 | 180 / 225 | 1.88 A | 0.95 A | 0.65 / 1.72 V | 2.86 W | 105 m |
+| **20** | **280 / 336** | **1.207 A** | **0.638 A** | **1.04 / 2.71 V** | **2.98 W** | **158 m** |
+| 22 | 426 / 568 | 0.79 A | 0.38 A | 1.65 / 4.38 V | 2.96 W | 264 m |
+| 24 | 616 / 880 | 0.55 A | 0.24 A | 2.59 / 6.95 V | 3.11 W | 406 m |
+
+Square packing (the conservative model); AWG 20 is what
+`build_assembly.py`'s `EXCITATION` is set to. Switching rows needs no
+re-solve -- just the turns/current pair. Run `winding_design.py` for the
+same table under hexagonal nesting, and for the layer-margin column.
+
+**The inner coil holds 5 layers under both packing models** at AWG 16, 18
+and 20. That robustness is the main practical gain from specifying a
+film-insulated wire: the old glass-served AWG 20 design needed hex nesting
+for its 5th layer and missed the square-packed one by 0.037 mm, a 20% swing
+in turns resting on an assumption about the wire type least likely to nest.
+
+**Dissipation is ~3 W in every row**, which is the useful structural
 result here:
 
 ```
@@ -303,19 +330,43 @@ lower current reduces I^2. The only levers on heat are window area,
 packing factor, turn length, and the A-turn requirement itself. Choosing
 a gauge is a power-supply matching decision, not a thermal one.
 
-Conductor current density is 2.4-2.7 A/mm^2 across the table --
-comfortable even with vacuum/radiation-only cooling. A standalone
-radiation balance (all 5 W leaving a ~0.070 m^2 envelope by radiation
-alone, no conduction path) puts the assembly at roughly 42-60 C depending
-on surface emissivity, so the magnet circuit is not thermally
-interesting on its own.
+Two channels rather than one series string is worth 1.46x on dissipation
+(4.34 W -> 2.98 W at AWG 20) because both coils get wound full and
+P ~ 1/N, and it keeps the inner/outer ratio adjustable instead of freezing
+a linear-solve result in copper.
 
-**Soft inputs**: the insulated-diameter figures are representative of
-single glass serving rather than taken from a datasheet, and they set the
-turn counts -- a real wire spec could move N by 10-20%, which moves the
-current, not the field or the power. Wiring in series is what forces
-equal current through coils of unequal resistance; running the coils at
-different currents needs two supplies or a trim resistor on one leg.
+### Current density and the uniform-J assumption
+
+Conductor current density is 1.1-2.7 A/mm^2 across the table (the outer
+coils sit at the low end -- wound full, they need less current) --
+comfortable even with vacuum/radiation-only cooling. A standalone
+radiation balance (3.3 W leaving a ~0.071 m^2 envelope by radiation alone,
+no conduction path) puts the assembly at 50 C, with the first material
+limit at 3.5x design current.
+
+`build_assembly.py` spreads each coil's current density over its **whole**
+CAD solid, but a real winding fills its window only to an integer number of
+layers, so the copper sits inboard of the window's outer face.
+`emag_sweep.py --fill-check` measures what that costs by re-solving the
+baseline with the outer coil shrunk to the copper's real radius:
+
+| outer coil solid | exit B_r |
+|---|---|
+| 1.500 in (full CAD window) | 306.52 G |
+| 1.433 in (real copper, AWG 20 square) | 304.08 G |
+| | **-0.80%** |
+
+Left uncorrected -- it is under the 1.25% linear-vs-nonlinear iron
+discrepancy already accepted -- but it is a systematic bias, and it does
+**not** cancel against the other one: the A36-proxy B-H curve is optimistic
+too. Both say the real hardware wants slightly more current than modelled.
+Wiring the outer coils part-wound (the series option) would make this term
+1.84x worse, which is a second reason to prefer two channels.
+
+**Soft inputs**: the 0.15 mm ground insulation is an allowance rather than
+a spec, and it is now the input most likely to cost a layer. Which packing
+model is real depends on how the coils are wound; both are reported and the
+design point uses the conservative one.
 
 ## Iron material data (ASTM A36)
 

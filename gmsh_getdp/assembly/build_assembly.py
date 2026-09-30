@@ -93,14 +93,22 @@ COIL_NAMES = {"inner_coil", "outer_coil"}
 # poles rather than adding axially -- see HOW_IT_WORKS.md sec. 5.
 #
 # Turns are a real winding design, not the inherited 300/200 placeholder:
-# AWG 20 single-glass-served wire fills the inner window at 260 turns (5
-# layers of 52), and the outer coils are wound to 165 so that one series
-# current gives the ~1.58 A-turn ratio the field wants. Only the A-turn
-# product reaches the solve, so a different gauge from the same trade study
-# changes the current/voltage split without changing the field at all.
+# AWG 20 heavy-build polyimide (NEMA MW 16-C), both coils wound FULL on two
+# independent constant-current channels: 5 layers of 56 inner, 6 of 56
+# outer, square-packed, over a 0.15mm ground-insulation allowance. From
+# sizing/winding_design.py; wire dimensions from sizing/wire_data.py.
+#
+# The ampere-turn products are UNCHANGED from the previous entry here
+# (260 x 1.30 = 338.0 and 165 x 1.30 = 214.5), so every solved field in this
+# repo remains valid -- only the A-turn product reaches the solve. What
+# changed is that these turns and currents describe a wire that can be
+# bought, at a temperature class that is real, and the outer coils are now
+# wound full instead of part-wound to 45% of their window, which is what
+# made the uniform-current-density assumption below honest (see
+# emag_sweep.py --fill-check).
 EXCITATION = {
-    "inner_coil": dict(turns=260, current=1.30, polarity=-1),
-    "outer_coil": dict(turns=165, current=1.30, polarity=+1),
+    "inner_coil": dict(turns=280, current=1.2071, polarity=-1),
+    "outer_coil": dict(turns=336, current=0.6384, polarity=+1),
 }
 
 

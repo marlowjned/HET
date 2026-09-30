@@ -217,34 +217,112 @@ uses. Not yet transcribed.
 |---|---|---|---|
 | resistivity at 20 C | 1.68e-8 ohm-m | `thermal/radiation_balance.py` | constant |
 | temperature coefficient | 0.00393 /K | as above | constant |
-| AWG bare diameters | 16: 1.291, 18: 1.024, 20: 0.812, 22: 0.644, 24: 0.511 mm | winding trade study | constant |
+| AWG bare diameters | 16: 1.290, 18: 1.024, 20: 0.813, 22: 0.643, 24: 0.511 mm | winding trade study | **verified** |
 
-Standard annealed-copper values. The magnetics solve does **not** use
+Standard annealed-copper values; the bare diameters are now the NEMA
+MW 1000 nominals ([source][nemamw]) rather than a generic AWG table, and
+agree with it to within 0.001 mm. The magnetics solve does **not** use
 copper properties at all -- windings enter only as a prescribed current
 density, and `nu[Windings] = 1/mu0` treats them as non-magnetic.
 
 ---
 
-## Fiberglass-served magnet wire
+## Magnet wire
 
-Chosen for insulation quality and plasma arc resistance rather than
-temperature capability.
+**Specified: AWG 20 heavy-build aromatic polyimide, NEMA MW 16-C, 240 C.**
+Full write-up, including the power supply, in
+[`sizing/WIRE_AND_SUPPLY.md`](sizing/WIRE_AND_SUPPLY.md); the tables live in
+`sizing/wire_data.py`.
+
+This entry used to describe fiberglass-served wire with estimated
+diameters, and was flagged here as the softest input in the project. It was
+worse than soft -- it described a product that cannot be bought. Replaced
+2026-09-30.
+
+### Dimensions
+
+All from NEMA MW 1000, and all **maximum** overall diameters rather than
+nominal: a turns-that-fit calculation wants the worst case a supplier is
+allowed to ship.
 
 | property | value | used by | confidence |
 |---|---|---|---|
-| insulated OD, single glass serving | 16: 1.45, 18: 1.18, 20: 0.96, 22: 0.79, 24: 0.65 mm | turns-that-fit calculation | **estimate** |
-| insulated OD, double glass serving | 16: 1.58, 18: 1.30, 20: 1.09, 22: 0.92, 24: 0.78 mm | as above | **estimate** |
-| continuous temperature limit | 200 C | `thermal/radiation_balance.py` limit | **estimate** |
+| bare copper dia | 16: 1.290, 18: 1.024, 20: 0.813, 22: 0.643, 24: 0.511 mm | winding design | **verified** |
+| max OD, heavy-build film | 16: 1.384, 18: 1.110, **20: 0.892**, 22: 0.714, 24: 0.577 mm | turns-that-fit calculation | **verified** |
+| max OD, single glass serving | AWG 12 only: 2.200 mm (bare 2.052) | fiberglass fallback | **verified** |
+| max OD, double glass serving | AWG 12 only: 2.276 mm | fiberglass fallback | **verified** |
+| temperature class, polyimide | 240 C (MW 16-C) | `thermal/radiation_balance.py` | **verified** |
+| temperature class, glass served | 155 C (MW 45) | as above, fallback | **verified** |
+| ground insulation allowance | 0.15 mm radial | winding design | **estimate** |
 
-**These are the softest inputs in the winding design.** The insulated
-diameters set how many turns fit, which sets the current and voltage (not
-the field, and not the dissipation -- see
-`gmsh_getdp/README.md` "Solenoid winding design"). A real wire datasheet
-could move turn counts by 10-20%.
+Source: [NEMA MW 1000 via the magnet wire engineering data handbook][nemamw],
+round heavy-build film dimensions p.18, round served polyester-glass p.36.
+Transcribed by parsing the PDF text layer, then range-checked in
+`sizing/wire_data.py`'s self-test.
 
-The 200 C limit is deliberately conservative; glass serving itself
-tolerates far more and the real ceiling depends on the binder. If that is
-firmed up, PTFE becomes the binding thermal constraint instead.
+Heavy-build dimensions are **insulation-chemistry-independent** -- MW 16-C
+(polyimide, 240 C), MW 35-C (polyurethane/nylon, 200 C) and MW 80-C
+(polyamideimide, 200 C) share this table. Only temperature class and price
+change with the polymer, so the turn counts survive a change of wire
+chemistry.
+
+**One transcription error found and corrected.** The AWG 12 double-glass OD
+is printed as 0.0986 in. Every other row's double serving adds 0.226-0.310 mm
+over bare; 0.0986 in would add 0.452 mm. It is a digit transposition of
+0.0896 in (0.0088 in over bare, matching AWG 11's 0.226 mm and AWG 10's
+0.229 mm). Corrected in `wire_data.py` with the reasoning recorded there,
+and the consistency check that caught it is kept as an assertion.
+
+### Why not fiberglass
+
+Three independent findings, any one of which would have been enough:
+
+1. **Not a standard size.** NEMA MW 1000 tabulates round polyester-glass
+   served wire from 1/0 down to **AWG 12 and no finer**. Glass serving is
+   filaments, whose thickness does not scale with the conductor -- it adds
+   ~0.15-0.21 mm to the OD at every gauge -- so it stops being offered on
+   fine wire. The old design point was AWG 20.
+2. **Not stocked, at any gauge.** No US retailer carries round glass-served
+   magnet wire. [S&W Wire][swwire] and [Bridgeport Insulated Wire][bpt]
+   make it to order.
+3. **The round product is Class 155, not 200 C.** Round glass serving is
+   Dacron Glass 155 (MW 45). The 200 C variant (Dacron Glass High Temp,
+   MW 51) is made "only in shaped or heavy round wire sizes"
+   ([MWS insulation guide][mwsins]). The old 200 C entry here was therefore
+   optimistic for the wire it named -- and it was the *first* limit reached
+   in the thermal model.
+
+Polyimide is better on every axis that matters: thinner than the glass
+estimate it replaces (so **more** turns, not fewer), dimensions from a
+standard rather than an estimate, 240 C, and a solid film with no porous
+covering to trap gas -- which matters in vacuum. Glass serving is
+specifically a poor vacuum choice for that last reason.
+
+The original rationale for glass was plasma arc resistance. The coils sit
+outside the discharge chamber with the PTFE wall between them and the
+plasma, so arc resistance at the wire is second-order; vacuum compatibility
+and temperature class are not.
+
+Fiberglass is kept as a **spec-only fallback** at AWG 12 in
+`sizing/wire_data.py`, so it can be ordered if a requirement ever demands
+it. It needs a made-to-order run and pushes the inner channel to ~7.3 A.
+
+### What this changed downstream
+
+Turn counts went **up** (the wire is thinner), and the two-channel supply
+decision let both coils be wound full instead of the outer being part-wound
+to hit an ampere-turn ratio:
+
+| | before | after |
+|---|---|---|
+| inner / outer turns | 260 / 165 | 280 / 336 |
+| current | 1.30 A series | 1.207 A / 0.638 A, two channels |
+| dissipation | 5.8 W | 3.0 W |
+| design-point temperature | 64 C | 50 C |
+| first limit | wire at 200 C, 2.4x design current | wire at 240 C, 3.5x |
+
+**Ampere-turns are unchanged** (338.0 / 214.5), so every field solved in
+this repo remains valid -- only the current/turns split moved.
 
 ---
 
@@ -328,9 +406,21 @@ conservative.
   Those two numbers disagree by 2x and nothing currently reconciles them.
   Unlike most entries here, this one would move the design point, not just
   its uncertainty band.
+- **Ground insulation is an allowance, not a spec** (0.15 mm radial, two
+  half-lapped wraps of 0.05 mm polyimide tape). Now the softest input in
+  the winding design, and the one most likely to cost the inner coil a
+  layer, since that window has only 0.152 mm of unused build left at
+  AWG 20. Resolved by deciding the actual build method.
+- **Which packing model the wound coils achieve.** Hex nesting and square
+  packing are both reported; the design point uses square. At AWG 20 the
+  inner coil holds 5 layers either way, so this only sets the outer
+  channel's current (0.638 A square, 0.547 A hex) -- and with two channels
+  it is measured after winding rather than assumed beforehand.
 - **Nothing in this file is measured on the actual hardware.** The B-H
   curve and the emissivity are the two worth measuring if anything is
-  going to be.
+  going to be. Wire dimensions are now at least from a standard, and are
+  verifiable with a micrometer on arrival -- worth doing, since they are
+  maxima and the real wire will run under them.
 
 ---
 
@@ -343,6 +433,10 @@ conservative.
 - [FEMM -- DC Magnetization Curves of Soft Magnetic Materials][femm] -- context on low-carbon steel B-H data and its origin (Metals Handbook, 8th ed., Vol. 1, ASM 1966)
 - [makeitfrom.com -- cold drawn 1018 carbon steel][mif1018] -- core (A108) physical/thermal properties
 - [SendCutSend -- cold rolled mild steel][scs] -- **procurement source**; grade, mechanical properties, thicknesses, tolerances
+- [NEMA MW 1000, via the magnet wire engineering data handbook][nemamw] -- **magnet wire dimensions**; round heavy-build film (p.18), round served polyester-glass (p.36). Parsed from the PDF text layer into `sizing/wire_data.py`
+- [MWS Wire -- magnet wire insulation guide][mwsins] -- insulation types, NEMA/IEC designations, temperature classes, and the size restrictions that rule out fine round glass-served wire
+- [Remington Industries -- 20 AWG 240 C polyimide][remington] -- **procurement source** for the specified wire; MW 16-C, 0.0351 in overall, spool sizes
+- [S&W Wire][swwire], [Bridgeport Insulated Wire][bpt] -- glass/Daglas-served magnet wire, made to order (no stocked retail source exists)
 - [FNAL TM-1197 via INIS -- B vs H curves for 1008 and 1020 steels][fnal] -- measured toroid curves. **Table 2 (1020) is transcribed and is the core material's curve.** Table 1 (1008) is the best candidate for replacing the plates' secondhand B-H proxy; not yet transcribed.
 
 [mif1008]: https://www.makeitfrom.com/material-properties/SAE-AISI-1008-G10080-Carbon-Steel
@@ -353,3 +447,8 @@ conservative.
 [femm]: https://www.femm.info/wiki/SoftMagneticMaterials
 [fnal]: https://inis.iaea.org/records/wmz02-45d12
 [scs]: https://sendcutsend.com/materials/mild-steel/cold-rolled/
+[nemamw]: https://www.casa.co.nz/cables/wire/magnet/EngData-Book_66p.pdf
+[mwsins]: https://mwswire.com/wp-content/uploads/2018/01/Insulation-Guide-Types-and-Characteristics-v2.pdf
+[remington]: https://www.remingtonindustries.com/magnet-wire/magnet-wire-240-c-20-awg-polyimide-7-spool-sizes-available/
+[swwire]: https://www.swwireco.com/
+[bpt]: https://www.thebridgeportwireco.com/products

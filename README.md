@@ -13,7 +13,13 @@ per-value confidence rating, are collected in **`MATERIALS.md`**.
 
 ## Layout
 
-- **`sizing/`** — `basic_het_sizing.py`: zero-CAD, textbook top-level
+- **`sizing/`** — wire, winding and supply specification plus top-level
+  thruster sizing. `wire_data.py` holds NEMA MW 1000 magnet wire
+  dimensions and insulation availability; `winding_design.py` turns an
+  ampere-turn requirement and a coil window into turns, currents,
+  voltage, power and temperature, reporting both packing models;
+  **`WIRE_AND_SUPPLY.md`** is the specification and bill of materials
+  that come out of it. Also `basic_het_sizing.py`: zero-CAD, textbook top-level
   sizing (Goebel & Katz scaling laws) — discharge current, channel
   geometry, thrust/Isp/efficiency, and a Larmor-radius magnetization
   check, from power/voltage targets. Upstream of everything else: this is
@@ -78,15 +84,23 @@ union blocker gets resolved on the Onshape side.
   replacing the old linear `mur_iron=1000` placeholder) is implemented
   and **converging** — see `gmsh_getdp/README.md` "Nonlinear iron
   (B-H curve)". Winding excitation is no longer a placeholder: it's a
-  real winding design (260/165 turns at 1.30 A) sized to the ~300 G
-  channel-exit target, which is also what made the nonlinear solve
+  real winding design sized to the ~300 G channel-exit target
+  (338 / 215 ampere-turns), which is also what made the nonlinear solve
   tractable, since the old 5 A placeholder drove the iron past
-  saturation. The magnet circuit needs ~3.8 V at 1.30 A, ~5.8 W.
+  saturation.
+- Wire and power supply: **specified**, in `sizing/WIRE_AND_SUPPLY.md` —
+  AWG 20 heavy-build polyimide (NEMA MW 16-C, 240 °C, stocked), 280 turns
+  inner at 1.207 A and 336 outer at 0.638 A on **two independent
+  constant-current channels**, ~3.0 W total, covered by any 2-channel
+  30 V / 3 A bench supply. Replaced a fiberglass-served specification
+  that cannot be bought at the needed gauge; the ampere-turns did not
+  change, so no solved field was invalidated. See `MATERIALS.md`
+  "Magnet wire".
 - Top-level thruster sizing (power/thrust/Isp from design targets):
   **working**, standalone, in `sizing/`.
-- Magnets-only thermal: **working**, in `thermal/` — 64 °C at the
-  design point, first material limit (wire insulation) at ~2.4× design
-  current. Plasma-loaded thermal is not modelled.
+- Magnets-only thermal: **working**, in `thermal/` — 50 °C at the
+  design point, first material limit (wire insulation, 240 °C) at 3.5×
+  design current. Plasma-loaded thermal is not modelled.
 - Spacer-height geometry sweep: **done** —
   `gmsh_getdp/assembly/emag_sweep.py` drives Onshape → mesh → linear
   solve across `emag_height` (spacer 0–0.875 in) × inner core diameter;

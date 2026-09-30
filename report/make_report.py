@@ -37,7 +37,18 @@ ASSEMBLY = ROOT / "gmsh_getdp" / "assembly"
 sys.path.insert(0, str(ROOT / "sizing"))
 sys.path.insert(0, str(ASSEMBLY))
 
-from winding_design import WIRE, design, windows_for  # noqa: E402
+from winding_design import design_two_channel, windows_for  # noqa: E402
+from wire_data import POLYIMIDE  # noqa: E402
+
+# Gauges carried in the report. The specified wire is stocked AWG 12-40, but
+# below 16 the currents get awkward for a commodity supply and above 24 the
+# turn counts stop being hand-windable, so the report shows the usable band.
+GAUGES = [g for g in POLYIMIDE.gauges if 16 <= g <= 24]
+
+# Packing model the report's numbers use. Square is the conservative one --
+# see sizing/WIRE_AND_SUPPLY.md. Hex would raise outer turn counts and lower
+# the outer channel current; it does not change the inner coil at AWG 16-20.
+PACKING = "square"
 from generate_regions import AISI1008_B, AISI1008_H, FNAL1020_B, FNAL1020_H  # noqa: E402
 
 MU0 = 4e-7 * math.pi
@@ -93,9 +104,13 @@ def main_grid(rows):
 
 
 def windings(r, awg):
+    """Two-channel winding for one swept geometry: both coils wound full,
+    each on its own constant-current channel (sizing/winding_design.py)."""
     inner, outer = windows_for(r["emag_height_in"], r["inner_core_dia_in"], r["outer_coil_od_in"])
-    return design(r["req_inner_At"], r["req_outer_At"], inner, outer, awg,
-                  envelope_area_m2=r["envelope_area_m2"])
+    return design_two_channel(inner, outer, awg, POLYIMIDE, PACKING,
+                              req_inner_At=r["req_inner_At"],
+                              req_outer_At=r["req_outer_At"],
+                              envelope_area_m2=r["envelope_area_m2"])
 
 
 def extract(tag):
@@ -357,10 +372,14 @@ def fig_core_flux(rows):
 
 def fig_winding(rows, awg=20):
     fig, axes = plt.subplots(1, 4, figsize=(6.8, 2.3))
-    series_plot(axes[0], rows, None, "series current (A)", fn=lambda r: windings(r, awg)["current_A"])
-    series_plot(axes[1], rows, None, "string voltage, hot (V)", fn=lambda r: windings(r, awg)["V_hot"])
-    series_plot(axes[2], rows, None, "power, hot (W)", fn=lambda r: windings(r, awg)["P_hot_W"])
-    series_plot(axes[3], rows, None, "hottest coil (C)", fn=lambda r: windings(r, awg)["T_coil_hot_C"])
+    series_plot(axes[0], rows, None, "inner channel current (A)",
+                fn=lambda r: windings(r, awg)["current_inner_A"])
+    series_plot(axes[1], rows, None, "outer channel current (A)",
+                fn=lambda r: windings(r, awg)["current_outer_A"])
+    series_plot(axes[2], rows, None, "total power, hot (W)",
+                fn=lambda r: windings(r, awg)["P_hot_W"])
+    series_plot(axes[3], rows, None, "hottest coil (C)",
+                fn=lambda r: windings(r, awg)["T_coil_hot_C"])
     for ax in axes:
         ax.set_ylim(bottom=0)
     axes[0].legend(frameon=False, fontsize=6)
@@ -373,29 +392,36 @@ def fig_psu(rows):
     fig, ax = plt.subplots(figsize=(4.6, 3.2))
     P = []
     for r in main_grid(rows):
-        for awg in WIRE:
+        for awg in GAUGES:
             w = windings(r, awg)
             if w:
-                P.append((awg, w["current_A"], w["V_hot"], w["P_hot_W"]))
+                # one point per CHANNEL: they run at different currents
+                P.append((awg, w["current_inner_A"], w["V_hot_inner"], 0))
+                P.append((awg, w["current_outer_A"], w["V_hot_outer"], 1))
     P = np.array(P)
     for p in (4, 8, 16):
         I = np.linspace(0.2, 6, 200)
         ax.plot(I, p / I, color=GRID, lw=1.0, zorder=0)
         ax.text(5.7, p / 5.7 * 1.06, f"{p} W", fontsize=7, color=MUTED, ha="right")
-    ax.scatter(P[:, 1], P[:, 2], s=14, color=SERIES[0], edgecolor="white", lw=0.5, zorder=3)
-    for awg in WIRE:
-        m = P[:, 0] == awg
-        ax.text(P[m, 1].max() * 1.05, np.median(P[m, 2]), f"AWG {awg}", fontsize=7, color=INK, va="center")
+    for ch, label in ((0, "inner channel"), (1, "outer channel")):
+        m = P[:, 3] == ch
+        ax.scatter(P[m, 1], P[m, 2], s=14, color=SERIES[ch], edgecolor="white", lw=0.5,
+                   zorder=3, label=label)
+    for awg in GAUGES:
+        m = (P[:, 0] == awg) & (P[:, 3] == 1)
+        ax.text(P[m, 1].max() * 1.06, np.median(P[m, 2]), f"AWG {awg}", fontsize=7,
+                color=INK, va="center")
+    ax.legend(frameon=False, fontsize=6.5, loc="lower left")
     ax.set_xscale("log")
     ax.set_yscale("log")
-    ax.set_xlim(0.3, 8)
-    ax.set_xticks([0.5, 1, 2, 5]); ax.set_xticklabels(["0.5", "1", "2", "5"])
+    ax.set_xlim(0.15, 8)
+    ax.set_xticks([0.2, 0.5, 1, 2, 5]); ax.set_xticklabels(["0.2", "0.5", "1", "2", "5"])
     ax.set_yticks([1, 2, 5, 10, 20]); ax.set_yticklabels(["1", "2", "5", "10", "20"])
     ax.minorticks_off()
     ax.set_ylim(0.5, 40)
-    ax.set_xlabel("series current (A)")
-    ax.set_ylabel("string voltage at operating temp. (V)")
-    ax.set_title("Every swept geometry x gauge, one point each")
+    ax.set_xlabel("channel current (A)")
+    ax.set_ylabel("channel voltage at operating temp. (V)")
+    ax.set_title("Every swept geometry x gauge x channel")
     fig.tight_layout()
     fig.savefig(FIG / "psu_map.pdf")
     plt.close(fig)
@@ -456,7 +482,8 @@ def write_tables(rows, extras):
         L.append(" & ".join([
             spacer_cell(r["spacer_in"]), f"{r['inner_core_dia_in']:.3f}",
             f"{w['inner_turns']}", f"{w['inner_layers']}", f"{w['outer_turns']}", f"{w['outer_layers']}",
-            f"{w['current_A']:.2f}", f"{w['R20_ohm']:.2f}", f"{w['V_hot']:.2f}", f"{w['P_hot_W']:.1f}",
+            f"{w['current_inner_A']:.2f}", f"{w['current_outer_A']:.2f}",
+            f"{w['V_hot_inner']:.2f}", f"{w['V_hot_outer']:.2f}", f"{w['P_hot_W']:.1f}",
             f"{w['T_coil_hot_C']:.0f}", f"{w['total_wire_m']:.0f}",
         ]) + r" \\")
     (GEN / "tab_awg20.tex").write_text("\n".join(with_breaks(L, g)) + "\n")
@@ -465,15 +492,16 @@ def write_tables(rows, extras):
     L = []
     for r in g:
         first = True
-        for awg in WIRE:
+        for awg in GAUGES:
             w = windings(r, awg)
             if not w:
                 continue
             L.append(" & ".join([
                 spacer_cell(r["spacer_in"]) if first else "", f"{r['inner_core_dia_in']:.3f}" if first else "",
-                f"{awg}", f"{w['inner_turns']}/{w['outer_turns']}", f"{w['current_A']:.2f}",
-                f"{w['R_hot_ohm']:.2f}", f"{w['V20']:.2f}", f"{w['V_hot']:.2f}", f"{w['P_hot_W']:.1f}",
-                f"{w['T_coil_hot_C']:.0f}", f"{w['J_A_per_mm2']:.1f}",
+                f"{awg}", f"{w['inner_turns']}/{w['outer_turns']}",
+                f"{w['current_inner_A']:.2f}", f"{w['current_outer_A']:.2f}",
+                f"{w['V_hot_inner']:.2f}", f"{w['V_hot_outer']:.2f}", f"{w['P_hot_W']:.1f}",
+                f"{w['T_coil_hot_C']:.0f}", f"{w['J_inner']:.1f}",
             ]) + r" \\")
             first = False
         L.append(r"\addlinespace[2pt]")
@@ -482,17 +510,21 @@ def write_tables(rows, extras):
     # power-supply requirements per gauge, over the whole sweep
     L = []
     W_J = extras["stored_energy_J"]
-    for awg in WIRE:
-        ws = [windings(r, awg) for r in g]
-        ws = [w for w in ws if w]
-        Imin, Imax = min(w["current_A"] for w in ws), max(w["current_A"] for w in ws)
-        Vmax = max(w["V_hot"] for w in ws)
+    for awg in GAUGES:
+        ws = [w for w in (windings(r, awg) for r in g) if w]
+        Ii = [w["current_inner_A"] for w in ws]
+        Io = [w["current_outer_A"] for w in ws]
+        Vmax = max(max(w["V_hot_inner"], w["V_hot_outer"]) for w in ws)
         Pmax = max(w["P_hot_W"] for w in ws)
-        L_mH = 2 * W_J / Imax ** 2 * 1e3, 2 * W_J / Imin ** 2 * 1e3
-        I_rate, V_rate = 1.25 * Imax, 2.0 * Vmax
+        # Rating: 1.25x the highest current on either channel (room for the
+        # linear-model and wire-tolerance uncertainty, plus field margin above
+        # 300 G) and 2x the highest hot voltage (lead resistance, ramping),
+        # floored at 5 V because nothing is sold below that.
+        I_rate, V_rate = 1.25 * max(Ii + Io), max(2.0 * Vmax, 5.0)
         L.append(" & ".join([
-            f"{awg}", f"{Imin:.2f}--{Imax:.2f}", f"{Vmax:.1f}", f"{Pmax:.1f}",
-            f"{L_mH[0]:.0f}--{L_mH[1]:.0f}", f"$\\geq${I_rate:.1f} A, $\\geq${V_rate:.0f} V",
+            f"{awg}", f"{min(Ii):.2f}--{max(Ii):.2f}", f"{min(Io):.2f}--{max(Io):.2f}",
+            f"{Vmax:.1f}", f"{Pmax:.1f}",
+            f"$\\geq${I_rate:.1f} A, $\\geq${V_rate:.0f} V",
         ]) + r" \\")
     (GEN / "tab_psu.tex").write_text("\n".join(L) + "\n")
 
@@ -501,13 +533,27 @@ def write_tables(rows, extras):
     zero = next(r for r in g if r["emag_height_in"] == 1.125 and r["inner_core_dia_in"] == 1.0)
     worst = max(g, key=lambda r: r["inner_shaft_B_max_T"])
     wb, wz = windings(base, 20), windings(zero, 20)
+    # thinnest core with no spacer: the configuration that buys the winding
+    # room back, and the one the summary compares against today's baseline
+    thin = next(r for r in g if r["emag_height_in"] == 1.125 and r["inner_core_dia_in"] == 0.75)
+    wt = windings(thin, 20)
+    w20 = [w for w in (windings(r, 20) for r in g) if w]
     macros = {
         "BaseInnerAt": f"{base['req_inner_At']:.0f}", "BaseOuterAt": f"{base['req_outer_At']:.0f}",
         "ZeroInnerAt": f"{zero['req_inner_At']:.0f}", "ZeroOuterAt": f"{zero['req_outer_At']:.0f}",
         "AtChangePct": f"{(zero['req_inner_At'] / base['req_inner_At'] - 1) * 100:+.1f}",
-        "BaseI": f"{wb['current_A']:.2f}", "ZeroI": f"{wz['current_A']:.2f}",
+        "BaseI": f"{wb['current_inner_A']:.2f}", "ZeroI": f"{wz['current_inner_A']:.2f}",
+        "BaseIOut": f"{wb['current_outer_A']:.2f}", "ZeroIOut": f"{wz['current_outer_A']:.2f}",
         "BaseP": f"{wb['P_hot_W']:.1f}", "ZeroP": f"{wz['P_hot_W']:.1f}",
-        "BaseV": f"{wb['V_hot']:.2f}", "ZeroV": f"{wz['V_hot']:.2f}",
+        "BaseV": f"{wb['V_hot_inner']:.2f}", "ZeroV": f"{wz['V_hot_inner']:.2f}",
+        "BaseVOut": f"{wb['V_hot_outer']:.2f}", "ZeroVOut": f"{wz['V_hot_outer']:.2f}",
+        "BaseNIn": f"{wb['inner_turns']}", "BaseNOut": f"{wb['outer_turns']}",
+        "ZeroThinI": f"{wt['current_inner_A']:.2f}", "ZeroThinP": f"{wt['P_hot_W']:.1f}",
+        "PsuIMin": f"{min(w['current_outer_A'] for w in w20):.2f}",
+        "PsuIMax": f"{max(w['current_inner_A'] for w in w20):.2f}",
+        "PsuVMax": f"{max(max(w['V_hot_inner'], w['V_hot_outer']) for w in w20):.1f}",
+        "PsuPMax": f"{max(w['P_hot_W'] for w in w20):.1f}",
+        "PsuIRate": f"{1.25 * max(w['current_inner_A'] for w in w20):.1f}",
         "BaseT": f"{wb['T_coil_hot_C']:.0f}", "ZeroT": f"{wz['T_coil_hot_C']:.0f}",
         "WorstCoreB": f"{worst['inner_shaft_B_max_T']:.2f}",
         "WorstCoreDesc": f"{worst['inner_core_dia_in']:.3f}~in core, {worst['spacer_in']:.3f}~in spacer",

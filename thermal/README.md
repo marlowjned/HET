@@ -19,28 +19,39 @@ so it runs standalone.
 
 ## Result at the design point
 
-1.30 A, 260/165 turns of AWG 20 -- see `../gmsh_getdp/README.md`
+AWG 20 heavy-build polyimide, 280 turns inner at 1.207 A and 336 turns
+outer at 0.638 A, on two independent constant-current channels -- see
+`../sizing/WIRE_AND_SUPPLY.md` and `../gmsh_getdp/README.md`
 "Solenoid winding design":
 
 | | value |
 |---|---|
-| dissipation | 5.8 W |
-| iron / PTFE | 64 C |
-| coils, bonded to core | 65 C |
-| coils, radiation-coupled only | 92 C |
+| dissipation | 3.3 W |
+| iron / PTFE | 50 C |
+| coils, bonded to core | 50 C |
+| coils, radiation-coupled only | 77 C |
 
-Nothing is close to a limit. Margin to the first one:
+Nothing is close to a limit. Margin to the first one, scanning the inner
+channel with the outer tracking it at a fixed ratio:
 
 | limit | | current | vs design |
 |---|---|---|---|
-| fiberglass wire insulation | 200 C | 3.09 A | 2.4x |
-| PTFE chamber | 260 C | 3.76 A | 2.9x |
-| ASTM A36 service limit | 400 C | 5.26 A | 4.0x |
-| ASTM A36 Curie point | 770 C | 8.79 A | 6.8x |
+| wire insulation (polyimide) | 240 C | 4.17 A | 3.5x |
+| PTFE chamber | 260 C | 4.42 A | 3.7x |
+| ASTM A36 service limit | 400 C | 6.11 A | 5.1x |
+| ASTM A36 Curie point | 770 C | 9.81 A | 8.1x |
 
-The 200 C wire figure is deliberately conservative -- glass serving itself
-tolerates far more, and the real limit depends on the binder. If that
-number is firmed up, PTFE becomes the binding constraint.
+Wire insulation is still the first limit, but with 3.5x margin instead of
+the 2.4x reported before. Both numbers moved for the same reason: the
+previous design point specified fiberglass-served wire at a 200 C class,
+and that wire cannot be bought at this gauge -- the round glass product is
+Class 155, which would have made this table *worse*, not better. The
+polyimide actually specified is 240 C. See `../MATERIALS.md` "Magnet wire".
+
+Dissipation fell from 5.8 W to 3.3 W because both coils are now wound full
+on separate channels, rather than the outer being part-wound to 45% of its
+window to hit an ampere-turn ratio from a single series current, and
+P ~ 1/N.
 
 Iron properties are ASTM A36 (k = 50 W/m-K, cp = 470 J/kg-K,
 rho = 7900 kg/m^3, service 400 C, Curie ~770 C), from

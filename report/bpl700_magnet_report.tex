@@ -43,16 +43,16 @@ This report sizes the \texttt{chamber\_spacer}, the A36 ring between the chamber
 \begin{itemize}
 \item \textbf{The spacer height hardly changes the field per ampere-turn.} Across the whole sweep the inner coil needs 326--339 A-turns (outer coils 207--215 each) for 300~G, a 4\% spread, of which about $\pm1$\% is mesh noise. The circuit is gap-dominated, and the exit gap does not move with the spacer.
 \item \textbf{It changes the winding a great deal.} Shorter coils hold fewer turns, so the same A-turns need more current. At the current 1.000~in core, AWG~20 goes from \BaseI~A / \BaseP~W / \BaseT$^\circ$C at the full 0.875~in spacer to \ZeroI~A / \ZeroP~W / \ZeroT$^\circ$C with no spacer.
-\item \textbf{Thinning the core buys that room back almost for free.} A 0.750~in core costs about 2\% more A-turns but nearly doubles the inner winding window. \emph{No spacer with a 0.750~in core needs 1.28~A and 5.4~W, essentially today's 1.27~A and 5.1~W.}
+\item \textbf{Thinning the core buys that room back almost for free.} A 0.750~in core costs about 2\% more A-turns but nearly doubles the inner winding window. \emph{No spacer with a 0.750~in core needs \ZeroThinI~A and \ZeroThinP~W on the inner channel, against \BaseI~A and \BaseP~W for today's full spacer.}
 \item \textbf{Nothing approaches saturation.} The highest core flux density anywhere in the sweep is \WorstCoreB~T (\WorstCoreDesc), against a knee of 1.3--1.5~T on the measured 1020 curve. Core flux \emph{rises} with spacer height: the steel spacer wraps the inner coil and pulls leakage flux through the core.
 \item \textbf{Shorter spacers shape the field slightly better.} The field at the anode end drops from 43~G to 22~G (1.000~in core) as the spacer goes from 0.875~in to 0, closer to the target lens profile, at a cost of about one point of radial purity (97.0\% to 95.9\%).
-\item \textbf{Supply.} One constant-current channel for the whole series string. With AWG~20 every swept design runs at 0.72--2.25~A and under 4.5~V hot (under 10~W), so a supply rated $\geq$2.8~A and $\geq$9~V covers them all; other gauges trade current for voltage at the same power (Sec.~\ref{sec:psu}).
+\item \textbf{Supply.} Two independent constant-current channels --- one for the inner coil, one for the four outer coils in series. With AWG~20 every swept design runs at \PsuIMin--\PsuIMax~A and under \PsuVMax~V hot (under \PsuPMax~W total), so any two-channel supply rated $\geq$\PsuIRate~A and $\geq$6~V covers them all; a commodity 30~V/3~A unit has ample margin. Other gauges trade current for voltage at the same power (Sec.~\ref{sec:psu}).
 \end{itemize}
 
 \section{Configuration and constraints}
 \label{sec:config}
 
-The circuit is one inner pole and four outer poles between two 0.375~in iron plates (Fig.~\ref{fig:geometry}). The top plate is the exit pole piece; the inner core carries a 1.375~in pole cap flush with it, and the radial gap between that cap and the top-plate bore is what puts the field across the discharge channel. Flux returns through the four outer cores and the bottom plate. Inner and outer windings are driven with opposite polarity from one series current.
+The circuit is one inner pole and four outer poles between two 0.375~in iron plates (Fig.~\ref{fig:geometry}). The top plate is the exit pole piece; the inner core carries a 1.375~in pole cap flush with it, and the radial gap between that cap and the top-plate bore is what puts the field across the discharge channel. Flux returns through the four outer cores and the bottom plate. Inner and outer windings are driven with opposite polarity, on two independent constant-current channels.
 
 \begin{figure}[H]
 \centering
@@ -66,7 +66,7 @@ Measured directly from the Onshape STEP exports, not assumed:
 \item \textbf{The spacer is fixed by \texttt{emag\_height}.} The chamber and top plate never move; the chamber's anode end sits at $y=+5.59$~mm and \texttt{emag\_height} moves only the bottom plate. So
 \[ h_\text{spacer} = \texttt{emag\_height} - 1.125~\text{in}, \]
 and $h_\text{spacer}\ge 0$ means $\texttt{emag\_height}\ge1.125$~in. At exactly 1.125~in Onshape drops the spacer body and the bottom plate sits on the chamber. All coils and cores are \texttt{emag\_height} tall.
-\item \textbf{The inner coil cannot grow outward.} The chamber bore and the spacer bore are both $r=17.46$~mm, exactly the inner coil's outer radius (OD 1.375~in). With the chamber fixed, the inner winding window is $4.76~\text{mm}\times\texttt{emag\_height}$ at the current 1.000~in core. It can only be recovered by thinning the core under the winding (\texttt{inner\_coil\_id}); the pole cap stays at 1.375~in regardless.
+\item \textbf{The inner coil cannot grow outward.} The chamber bore and the spacer bore are both $r=17.46$~mm, exactly the inner coil's outer radius (OD 1.375~in). With the chamber fixed, the inner winding window is $4.76~\text{mm}\times\texttt{emag\_height}$ of bare geometry at the current 1.000~in core, or 4.61~mm of usable build once ground insulation over the core is allowed for. It can only be recovered by thinning the core under the winding (\texttt{inner\_coil\_id}); the pole cap stays at 1.375~in regardless.
 \item \textbf{The outer coils have room.} Outer core axes sit 62.86~mm off-axis and the chamber's outer wall is at $r=41.28$~mm, so an outer coil can reach $\approx1.70$~in OD before touching it (currently 1.5~in).
 \item \textbf{Stock thicknesses.} The spacer is a single laser-cut A36 part only at a stocked thickness: 0.187, 0.250, 0.313, 0.375 or 0.500~in. Those are marked $^\dagger$ in the tables.
 \end{itemize}
@@ -81,7 +81,7 @@ Part & Material & Source & Magnetic model \\
 \midrule
 Top, bottom plates; spacer & ASTM A36, hot-rolled P\&O & SendCutSend & AISI 1008 curve as proxy (secondhand) \\
 Inner, outer emag cores & ASTM A108 cold-finished bar (taken as 1018) & McMaster & measured 1020 curve, Fermilab TM-1197 \\
-Windings & fiberglass-served Cu magnet wire & -- & $\mu_r=1$; current density only \\
+Windings & AWG 20 heavy-build polyimide Cu magnet wire, NEMA MW 16-C, 240$^\circ$C & Remington & $\mu_r=1$; current density only \\
 Chamber & PTFE & -- & $\mu_r=1$ (not meshed) \\
 \bottomrule
 \end{tabular}
@@ -103,7 +103,7 @@ Because the model is linear, each geometry needs one solve: the field scales wit
 
 \paragraph{Metrics.} The channel is split into 20 axial stations from anode to exit; $B_r$ and $B_\text{axial}$ are volume-element averages over each station. Radial purity is the mean of $B_r/|B|$. Core flux density is the mean axial $B$ across the shaft cross-section (inside 90\% of the core radius), taken at its maximum along the shaft, since leakage flux joins the core along its length.
 
-\paragraph{Windings.} \texttt{sizing/winding\_design.py} turns A-turns into a winding. Hexagonally nested round wire; insulated diameters are single-glass-served estimates. The inner coil is wound full; the outer coils are wound to whatever turn count gives the required A-turn ratio at the same series current (or full, if the outer window runs out first). Resistance uses the radius the copper actually occupies. It reproduces the committed 260/165-turn AWG~20 design exactly.
+\paragraph{Windings.} \texttt{sizing/winding\_design.py} turns A-turns into a winding. Wire dimensions are NEMA MW 1000 \emph{maximum} overall diameters for heavy-build film-insulated wire (\texttt{sizing/wire\_data.py}), not estimates, less a 0.15~mm radial allowance for ground insulation over the bare core. Both coils are wound full, each on its own constant-current channel, so no turn count has to be contrived to hit the A-turn ratio. Turn counts are reported under two packing models --- hexagonal nesting (best case) and square packing (conservative) --- because which one a hand-wound coil achieves is genuinely open; the tables here use square. Resistance uses the radius the copper actually occupies, not the window's. It reproduces the committed \BaseNIn/\BaseNOut-turn AWG~20 design exactly.
 
 \paragraph{Thermal.} \texttt{thermal/radiation\_balance.py}: vacuum, radiation from the outer envelope only (taken from each geometry's own mesh), emissivity 0.30, coils bonded to their cores. Temperatures feed back into copper resistance.
 
@@ -179,7 +179,7 @@ spacer & emag\_height & \multicolumn{4}{c}{inner coil} & \multicolumn{3}{c}{oute
 \tabinput{generated/tab_geometry.tex}
 \bottomrule
 \end{tabular}
-\caption{Coil geometry of every swept configuration. Inner coil ID = core diameter; OD is fixed at 1.375~in by the chamber bore. $^\dagger$~spacer at a stocked A36 thickness.}
+\caption{Coil geometry of every swept configuration. Inner coil ID = core diameter; OD is fixed at 1.375~in by the chamber bore. Build and window are the space available \emph{to the winding}, i.e. net of a 0.15~mm radial allowance for ground insulation over the bare core --- so the inner build reads 4.61~mm against the 4.76~mm of bare geometry. $^\dagger$~spacer at a stocked A36 thickness.}
 \label{tab:geometry}
 \end{table}
 
@@ -200,23 +200,23 @@ spacer & core & \multicolumn{2}{c}{A-turns for 300 G} & $B_r$ peak & $B_r$ anode
 
 \begin{table}[htbp]
 \centering\small
-\begin{tabular}{@{}rrrrrrrrrrrr@{}}
+\begin{tabular}{@{}rrrrrrrrrrrrr@{}}
 \toprule
-spacer & core & \multicolumn{2}{c}{inner} & \multicolumn{2}{c}{outer (each)} & $I$ & $R_{20}$ & $V_\text{hot}$ & $P_\text{hot}$ & $T_\text{coil}$ & wire \\
-\cmidrule(lr){3-4}\cmidrule(lr){5-6}
-(in) & (in) & turns & layers & turns & layers & (A) & ($\Omega$) & (V) & (W) & ($^\circ$C) & (m) \\
+spacer & core & \multicolumn{2}{c}{inner} & \multicolumn{2}{c}{outer (each)} & \multicolumn{2}{c}{current (A)} & \multicolumn{2}{c}{$V_\text{hot}$ (V)} & $P_\text{hot}$ & $T_\text{coil}$ & wire \\
+\cmidrule(lr){3-4}\cmidrule(lr){5-6}\cmidrule(lr){7-8}\cmidrule(lr){9-10}
+(in) & (in) & turns & layers & turns & layers & inner & outer & inner & outer & (W) & ($^\circ$C) & (m) \\
 \midrule
 \tabinput{generated/tab_awg20.tex}
 \bottomrule
 \end{tabular}
-\caption{AWG~20 winding for every configuration (the committed gauge), series string of all five coils. Other gauges: Appendix~A.}
+\caption{AWG~20 winding for every configuration (the committed gauge). Both coils are wound full on two independent constant-current channels, so the inner and outer currents differ; the four outer coils sit in series on the outer channel. Square packing. Other gauges: Appendix~A.}
 \label{tab:awg20}
 \end{table}
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=\linewidth]{figures/winding_awg20.pdf}
-\caption{AWG~20: series current, string voltage and power at operating temperature, and hottest-coil temperature, per spacer height and core diameter.}
+\caption{AWG~20: the two channel currents, total power at operating temperature, and hottest-coil temperature, per spacer height and core diameter.}
 \label{fig:winding}
 \end{figure}
 
@@ -229,36 +229,38 @@ Nothing in the magnetics depends on the gauge: only the ampere-turn product reac
 \centering\small
 \begin{tabular}{@{}rccccl@{}}
 \toprule
-AWG & current (A) & max voltage, hot (V) & max power (W) & string $L$ (mH) & suggested supply rating \\
+AWG & \multicolumn{2}{c}{current (A)} & max $V$, hot & max $P$ & suggested rating, \\
+\cmidrule(lr){2-3}
+ & inner & outer & (V) & (W) & each channel \\
 \midrule
 \tabinput{generated/tab_psu.tex}
 \bottomrule
 \end{tabular}
-\caption{Supply envelope per wire gauge across all swept geometries (one series string, all five coils). ``Hot'' is at the steady-state coil temperature. Suggested rating: 1.25$\times$ the highest current (room for the linear-model and wire-diameter uncertainty and a field margin above 300~G) and 2$\times$ the highest hot voltage (room for lead resistance and ramping into the inductance).}
+\caption{Supply envelope per wire gauge across all swept geometries, for two independent constant-current channels. ``Hot'' is at the steady-state coil temperature. Suggested rating: 1.25$\times$ the highest current on either channel (room for the linear-model and wire-tolerance uncertainty and a field margin above 300~G) and 2$\times$ the highest hot voltage (room for lead resistance and ramping into the inductance), floored at 5~V. A two-channel 30~V/3~A bench supply covers every AWG~20 design.}
 \label{tab:psu}
 \end{table}
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.62\linewidth]{figures/psu_map.pdf}
-\caption{Every swept geometry in every gauge as a (current, voltage) operating point, with lines of constant power. Gauge moves a design along a constant-power line; geometry moves it across the lines.}
+\caption{Every swept geometry in every gauge as a (current, voltage) operating point, one per channel, with lines of constant power. Gauge moves a design along a constant-power line; geometry moves it across the lines. The outer channel sits at lower current and higher voltage because its coils are wound full.}
 \label{fig:psu}
 \end{figure}
 
 What the supply needs, independent of gauge:
 \begin{itemize}
 \item \textbf{Constant-current (CC) regulation.} The field follows current, not voltage; copper resistance rises about 0.4\%/K as the coils warm, so a constant-voltage supply would let the field drift down by the same amount. Any bench supply with a CC mode works; the load is a plain resistor-inductor.
-\item \textbf{One channel is enough.} All five coils run in series from one current. The inner/outer ratio is set by turn counts, not by separate supplies. A second supply (or a trim resistor on one leg) is only needed to tune the ratio in the lab.
-\item \textbf{Inductance, and switching off.} Stored field energy at the operating point is \StoredEnergyMJ~mJ (from the nonlinear baseline solve), independent of gauge, so the string inductance is $L = 2W/I^2$ (Table~\ref{tab:psu}). Ramp the current up and down rather than stepping it, and put a flyback diode (or TVS) across the string so an open circuit or relay under current cannot generate a large voltage spike. The time constant $L/R$ is tens of milliseconds, so ripple is heavily filtered and does not matter.
+\item \textbf{Two channels, not one.} The inner coil and the four outer coils (in series with each other) run on separate constant-current channels. One series string would work, but it forces the outer coils to be part-wound to whatever turn count gives the right ampere-turn ratio at the shared current, which costs 1.46$\times$ the dissipation and freezes that ratio in copper --- a ratio that came from a linear solve with a proxy B-H curve. With two channels both coils are wound full and the ratio stays a dial. It also removes the turn-count risk: count the turns actually wound and set each channel to $\mathrm{A\text{-}turns}/N$.
+\item \textbf{Inductance, and switching off.} Stored field energy at the operating point is \StoredEnergyMJ~mJ, set by the field and therefore the same at every gauge. With two channels this does not collapse to a single string inductance: splitting it into two self-inductances plus a mutual term needs one solve per channel energised alone, which has not been done. What matters practically is unaffected --- the time constant is of order 100~ms, so ramp the current over $\geq$1~s rather than stepping it, and put a flyback diode across each channel so an open circuit or a relay opening under current cannot generate a voltage spike. At \StoredEnergyMJ~mJ the diode choice is trivial (any 1~A/100~V part); the inductance constrains ramp rate, not the diode. Ripple is heavily filtered by the same time constant and does not matter.
 \item \textbf{Polarity.} The inner winding is driven opposite to the outer windings (flux crosses the channel from the inner pole to the top plate). Wire the string so the inner coil's sense is reversed relative to the four outer coils, and check it with a gaussmeter at first power-up: wrong polarity collapses the channel field.
 \item \textbf{Floating output.} The coils sit next to the discharge; an isolated (floating) output keeps the magnet circuit independent of the discharge supply's reference.
 \end{itemize}
 
 \section{Limitations and open items}
 \begin{itemize}
-\item \textbf{Insulated wire diameters are estimates.} They set turn counts, which can move by 10--20\% with a real datasheet. That moves current and voltage (and the supply choice), not the field and barely the power.
+\item \textbf{Ground insulation is an allowance.} Wire dimensions are now NEMA MW 1000 maxima rather than estimates, but the 0.15~mm radial allowance for ground insulation over the bare core is a build assumption, and it is the input most likely to cost the inner coil a layer (0.152~mm of unused build remains at AWG~20). Which packing model the wound coils achieve is also open; both are reported and the tables use the conservative one.
 \item \textbf{Linear iron.} Each point is a linear solve. It is checked against a converged nonlinear solve only at the baseline geometry; the worst-case nonlinear check did not converge (Sec.~\ref{sec:method}), though its unconverged field agrees with the linear one in the channel and cores. The plates' B-H curve is a proxy (1008 for A36). The circuit is gap-dominated, so this mostly matters for the core saturation margin, which is judged against the measured 1020 curve.
-\item \textbf{Fixed inner/outer A-turn ratio.} Re-optimising the ratio per geometry could recover some field shape at short spacers.
+\item \textbf{Fixed inner/outer A-turn ratio.} Re-optimising the ratio per geometry could recover some field shape at short spacers. The two-channel supply makes this adjustable on the bench rather than fixed at winding time, so it is now a commissioning question rather than a design one.
 \item \textbf{The 300~G target is not derived} from the plasma requirements (the top-level sizing script assumes 150~G). The results scale linearly: halving the target halves every A-turn and current figure and quarters every power.
 \item \textbf{Magnets-only thermal.} No plasma heat load; emissivity 0.30 assumed (\texttt{thermal/README.md} has the sensitivity).
 \end{itemize}
@@ -268,8 +270,8 @@ What the supply needs, independent of gauge:
 \small
 \begin{longtable}{@{}rrrcrrrrrrr@{}}
 \toprule
-spacer & core & AWG & turns in/out & $I$ (A) & $R_\text{hot}$ ($\Omega$) & $V_{20}$ & $V_\text{hot}$ & $P_\text{hot}$ (W) & $T_\text{coil}$ ($^\circ$C) & $J$ (A/mm$^2$) \\
-(in) & (in) & & & & & (V) & (V) & & & \\
+spacer & core & AWG & turns in/out & \multicolumn{2}{c}{current (A)} & \multicolumn{2}{c}{$V_\text{hot}$ (V)} & $P_\text{hot}$ (W) & $T_\text{coil}$ ($^\circ$C) & $J_\text{inner}$ \\
+(in) & (in) & & & inner & outer & inner & outer & & & (A/mm$^2$) \\
 \midrule
 \endhead
 \tabinput{generated/tab_all_gauges.tex}

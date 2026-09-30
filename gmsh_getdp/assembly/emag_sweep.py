@@ -300,6 +300,47 @@ def write_csv(rows):
             w.writerow(r)
 
 
+# Outer radius of the copper the real winding actually occupies, as a coil
+# OD in inches: AWG 20 heavy-build polyimide, square packing, 6 layers over
+# the 0.15mm ground insulation (sizing/winding_design.py). The CAD coil
+# solid is 1.500in OD, so the FEM spreads the current density over a window
+# ~19% thicker than the copper. fill_check() bounds what that costs.
+REAL_COPPER_OUTER_OD_IN = 1.433
+
+
+def fill_check():
+    """How much does spreading J over the whole coil window, rather than
+    over the copper that is really there, move the channel field?
+
+    build_assembly.py applies a uniform current density over the entire CAD
+    coil solid. A real winding fills its window only to an integer number of
+    layers, so the copper sits inboard of the window's outer face. This
+    re-solves the baseline with the outer coil solid shrunk to the copper's
+    real outer radius -- same ampere-turns, same iron, current confined to
+    where it actually is -- and compares the channel-exit field.
+
+    Only the OUTER coil is varied, for two reasons: outer_coil_od touches
+    nothing but the outer coil solids, whereas inner_coil_od also drives the
+    chamber and spacer bore and would change the iron; and the inner coil's
+    error is self-cancelling anyway. The inner copper is pushed 0.15mm OUT at
+    the bore by the ground insulation and sits 0.152mm IN at the top, so its
+    mean radius moves by ~1um -- the mean radius is what a solenoid's
+    external field responds to, so there is nothing there to find.
+    """
+    base = run_point(2.0, 1.0, 1.5)
+    real = run_point(2.0, 1.0, REAL_COPPER_OUTER_OD_IN, suffix="_fillcheck")
+    b0, b1 = base["B_exit_G_at_base"], real["B_exit_G_at_base"]
+    print(f"\nouter coil OD 1.500in (full CAD window) B_r exit = {b0:.2f} G")
+    print(f"outer coil OD {REAL_COPPER_OUTER_OD_IN}in (real copper)  B_r exit = {b1:.2f} G")
+    print(f"  -> confining the outer current to the copper moves the exit field "
+          f"{(b1 / b0 - 1) * 100:+.2f}%")
+    print(f"  (for scale: linear-vs-nonlinear iron is 1.25%, and the A-turn "
+          f"requirement would shift by the same {(b0 / b1 - 1) * 100:+.2f}%)")
+    for k in ("radial_purity_pct", "inner_shaft_B_max_T", "outer_shaft_B_max_T"):
+        print(f"  {k:24s} {base[k]:9.4f} -> {real[k]:9.4f}  "
+              f"({(real[k] / base[k] - 1) * 100:+.2f}%)")
+
+
 def validate():
     """Baseline geometry, linear iron, compared on the same metrics to the
     committed nonlinear solve (b_assembly.pos/b_iron.pos in this directory,
@@ -323,6 +364,9 @@ def main():
     ap.add_argument("--only", help="run a single tag, e.g. h2.000_ci1.000_oo1.500")
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--validate", action="store_true")
+    ap.add_argument("--fill-check", action="store_true",
+                    help="bound the cost of spreading J over the whole coil window "
+                         "instead of over the copper actually wound")
     ap.add_argument("--fine-ramp", action="store_true",
                     help="with --nonlinear: 9-stage load ramp (0.5..1.0) instead of 2 stages")
     ap.add_argument("--nonlinear", metavar="TAG",
@@ -332,6 +376,9 @@ def main():
 
     if args.validate:
         validate()
+        return
+    if args.fill_check:
+        fill_check()
         return
     if args.nonlinear:
         h, ci, oo = (float(p[1:] if p[0] == "h" else p[2:]) for p in args.nonlinear.split("_"))
@@ -363,7 +410,8 @@ def main():
                 gmsh.finalize()
             shutil.rmtree(RUNS_DIR / tag_for(*p), ignore_errors=True)
         done = [json.loads(f.read_text()) for f in RUNS_DIR.glob("h*_ci*_oo*/metrics.json")
-                if not f.parent.name.endswith(("_validate", "_nonlinear", "_nonlinear_fine"))]
+                if not f.parent.name.endswith(("_validate", "_nonlinear", "_nonlinear_fine",
+                                               "_fillcheck"))]
         if done:
             write_csv(done)
     print(f"\nWrote {RESULTS_CSV}")

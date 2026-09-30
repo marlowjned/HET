@@ -52,10 +52,24 @@ T_AMB = 300.0               # K -- vacuum chamber wall temperature
 EPS_ENVELOPE = 0.30         # outer surface emissivity; SEE MODULE DOCSTRING
 EPS_GAP = 0.80              # coil <-> iron surfaces, for the radiation-only case
 
+# Wire insulation temperature class, deg C, per NEMA MW 1000 -- see
+# sizing/wire_data.py for the dimension tables and availability notes.
+# The specified wire is heavy-build aromatic polyimide (MW 16-C, 240 C).
+# The old 200 C "fiberglass" figure described a product that is not
+# purchasable at any gauge this design could use, and the round glass
+# product that does exist is Class 155, not 200 C -- so this entry moved
+# in BOTH directions depending on which wire is chosen, and it matters:
+# it used to be the first limit reached.
+WIRE_CLASS_C = {
+    "polyimide": 240.0,   # MW 16-C, stocked
+    "glass": 155.0,       # MW 45 single/double polyester-glass, made-to-order
+}
+WIRE = "polyimide"
+
 # Material limits (continuous service), deg C
 LIMITS = {
     "PTFE chamber": 260.0,
-    "fiberglass wire insulation": 200.0,   # conservative; some serve rates far higher
+    f"wire insulation ({WIRE})": WIRE_CLASS_C[WIRE],
     "ASTM A36 service limit": 400.0,       # makeitfrom.com max operating temp
     "ASTM A36 (Curie)": 770.0,             # magnetic circuit fails well before this
 }
@@ -84,6 +98,14 @@ class Coil:
     r_in: float                # m, winding inner radius
     r_out: float               # m, winding outer radius
     height: float              # m, axial
+    current_ratio: float = 1.0
+    # This coil's current as a fraction of the reference current every
+    # function here takes. 1.0 for a series string, where one current runs
+    # through everything. With the inner and outer coils on INDEPENDENT
+    # supply channels they carry different currents, and the ratio is fixed
+    # by the ampere-turn requirement each channel has to meet. Scanning the
+    # reference current then means "turn both channels up together", which
+    # is how the field would actually be raised.
 
     @property
     def window(self) -> float:
@@ -109,18 +131,19 @@ class Coil:
     def resistance(self, T_C: float) -> float:
         """R = rho*N*L_turn/A_wire, from the actual conductor.
 
-        Deliberately NOT the rho*N^2*L/(k*A_window) form: that one assumes
-        the winding FILLS its window, and the outer coils here are wound to
-        165 of a possible 364 turns so one series current gives the right
-        ampere-turn ratio. Using a full-wind packing factor on a
-        part-wound coil understated its resistance by 2.2x.
+        Deliberately NOT the rho*N^2*L/(k*A_window) form, which assumes the
+        winding FILLS its window. Both coils are now wound full so the two
+        agree, but the explicit form is kept: it was a part-wound outer coil
+        (165 of a possible 364 turns, to get the ampere-turn ratio from one
+        series current) that made the window form understate resistance by
+        2.2x, and the series option is still costed in sizing/.
         """
         rho = RHO_CU_20 * (1 + ALPHA_CU * (T_C - 20.0))
         return rho * self.turns * self.turn_length / self.wire_area
 
     def dissipation(self, current: float, T_C: float) -> float:
-        """Watts for ONE coil of this type."""
-        return current ** 2 * self.resistance(T_C)
+        """Watts for ONE coil of this type, at `current` x this coil's ratio."""
+        return (current * self.current_ratio) ** 2 * self.resistance(T_C)
 
     @property
     def bore_area(self) -> float:
@@ -133,14 +156,27 @@ class Coil:
         return 2 * math.pi * (self.r_in + self.r_out) * self.height
 
 
-# The committed design point: AWG 20 fiberglass-served, inner wound full,
-# outer wound to the ampere-turn ratio the field wants. See
-# gmsh_getdp/README.md "Solenoid winding design" for the gauge trade.
-AWG20_BARE = 0.812e-3
-INNER = Coil("inner", 1, 260, AWG20_BARE, 0.0127, 0.0174625, 0.0508)
-OUTER = Coil("outer", 4, 165, AWG20_BARE, 0.0127, 0.019050, 0.0508)
+# The committed design point: AWG 20 heavy-build polyimide (MW 16-C), BOTH
+# coils wound full, on two independent supply channels. See
+# gmsh_getdp/README.md "Solenoid winding design" for the gauge trade and
+# sizing/wire_data.py for where the wire dimensions come from.
+#
+# Turn counts assume SQUARE packing, the conservative case: 5 layers of 56
+# inner, 6 of 56 outer. Hex nesting would give the outer coil 7 layers (392
+# turns) and let its channel run at 0.547 A instead; the inner coil holds 5
+# layers either way, which is the point of specifying a film-insulated wire
+# rather than a glass-served one. Count the turns you actually wound and set
+# each channel to req_At/N -- with two channels the turn count is a current
+# setting, not a design error.
+#
+# r_out is the outer radius of the COPPER, not of the coil window, and r_in
+# includes the 0.15 mm ground-insulation allowance over the bare core.
+AWG20_BARE = 0.813e-3
+INNER = Coil("inner", 1, 280, AWG20_BARE, 0.012850, 0.017310, 0.0508)
+OUTER = Coil("outer", 4, 336, AWG20_BARE, 0.012850, 0.018202, 0.0508,
+             current_ratio=0.6384 / 1.2071)
 COILS = [INNER, OUTER]
-I_DESIGN = 1.30
+I_DESIGN = 1.2071          # inner channel; outer runs I_DESIGN*current_ratio
 
 for _c in COILS:
     assert _c.packing < 0.75, (
@@ -266,14 +302,16 @@ def main() -> None:
     print(f"  source           : {how}")
     print(f"ambient            : {T_AMB:.0f} K ({T_AMB-273.15:.0f} C)")
     print(f"envelope emissivity: {EPS_ENVELOPE:.2f}   <-- dominant assumption, see sweep below")
-    print(f"design current     : {I_DESIGN:.2f} A")
+    print(f"wire               : {WIRE}, {WIRE_CLASS_C[WIRE]:.0f} C class")
+    print(f"reference current  : {I_DESIGN:.3f} A (inner channel)")
     for c in COILS:
+        I = I_DESIGN * c.current_ratio
+        R = c.count * c.resistance(20)
         print(f"  {c.name:6s} x{c.count}  {c.turns:3d} turns of {c.wire_dia*1e3:.3f} mm  "
               f"window {c.window*1e6:6.1f} mm^2  fill={c.packing:.0%}  "
-              f"R(20C)={c.resistance(20):.3f} ohm")
-    R_series = sum(c.count * c.resistance(20) for c in COILS)
-    print(f"  series total       : {R_series:.3f} ohm -> "
-          f"{I_DESIGN*R_series:.2f} V at {I_DESIGN:.2f} A")
+              f"R(20C)={R:6.3f} ohm  {I:5.3f} A -> {I*R:5.2f} V  {I*I*R:5.2f} W")
+    print(f"  total dissipation  : "
+          f"{sum(c.count*c.dissipation(I_DESIGN, 20) for c in COILS):.2f} W at 20 C")
 
     print("\n--- design point ---")
     for mode, label in (("contact", "coil bonded to core (h=500 W/m^2-K)"),
