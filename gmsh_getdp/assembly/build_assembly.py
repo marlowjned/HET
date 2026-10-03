@@ -58,6 +58,7 @@ detect_channel_cavity's sibling note and gmsh_getdp/README.md
 import argparse
 import math
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -75,14 +76,36 @@ INCH_TO_M = 0.0254
 # CLI defaults so `python build_assembly.py` with no args reproduces "the"
 # baseline configuration.
 ONSHAPE_DEFAULTS_IN = dict(
-    emag_height=2.0, inner_coil_id=1.0, inner_coil_od=1.375,
-    outer_coil_id=1.0, outer_coil_od=1.5,
+    emag_height=1.625, iem_coreod=1.0, iem_coilt=0.25, iem_platet=0.375,
+    oem_coreod=1.0, oem_coilt=0.5,
 )
 
-IRON_CORE_NAMES = {"top_plate", "bottom_plate", "inner_emag_core", "outer_emag_core"}
-CHAMBER_SPACER_NAME = "chamber_spacer"
+IRON_CORE_NAMES = {"front_plate", "back_plate", "iem_core", "oem_core"}
+CHAMBER_SPACER_NAME = "spacer"
 CHAMBER_NAME = "chamber"
-COIL_NAMES = {"inner_coil", "outer_coil"}
+COIL_NAMES = {"coil"}
+
+# Magnetically inert bodies that are present in the STEP but kept out of the
+# FEM domain entirely, the same way `chamber` is: Ampere's law cannot tell
+# mu_r=1 from empty space, so letting their volume fall into Air is exact,
+# not an approximation.
+#   anode_axial -- AISI 316L austenitic stainless (confirmed 2026-10-02).
+#     mu_r ~ 1.00 annealed; cold work can raise it slightly via strain-
+#     induced martensite, still negligible against the iron circuit.
+#   Revolve1 -- 4 small stepped tubes (bore 8.1 mm, OD 10.0/14.2 mm), two
+#     stacked at each of the two gas-feed holes through the back plate
+#     (axes +/-26.86 mm from the thrust axis, measured 2026-10-03). Treated
+#     as inert PROVISIONALLY: their material is not confirmed. They sit
+#     outside the magnetic circuit, behind the back plate.
+INERT_NAMES = {"anode_axial", "Revolve1"}
+
+# BPL-1000 renamed every body relative to BPL-700. Kept so a stale STEP or an
+# old run directory is diagnosed by name instead of failing as "unrecognized".
+BPL700_RENAMES = {
+    "top_plate": "back_plate", "bottom_plate": "front_plate",
+    "inner_emag_core": "iem_core", "outer_emag_core": "oem_core",
+    "chamber_spacer": "spacer", "inner_coil": "coil", "outer_coil": "coil",
+}
 
 # Sized for the ~300 G channel-exit target (field_quality.py's target
 # definition), replacing the inherited 5 A / 300t / 200t placeholder.
@@ -220,6 +243,100 @@ def detect_channel_cavity(centroids, nodes, axis_x: float, axis_z: float,
     return r_in, r_out, y_closed, y_open
 
 
+def coil_radii(occ, d: int, t: int, height: float) -> tuple[float, float]:
+    """(inner radius, outer radius) of a coil solid of revolution about Y,
+    measured from the solid's own boundary faces.
+
+    A full cylindrical lateral face of radius r and height h has area exactly
+    2*pi*r*h, so r = area / (2*pi*h). occ.getMass() on a face is a true
+    surface integral over the trimmed face, so this is exact -- unlike
+    occ.getBoundingBox(), which is documented in build() below to return a
+    LOOSE bound on exactly these curved STEP-imported solids.
+
+    Deliberately NOT derived from the configuration parameters. On BPL-1000
+    the coil OD is coreod + coilt and the ID tracks the core, but the as-built
+    solids do not match that arithmetic to better than ~0.5 mm (measured
+    2026-10-02: inner coil build 3.77 mm against a nominal 3.175 mm). Since
+    r_mean sets A_cross and A_cross sets the ampere-turns the FEM actually
+    applies -- the exact quantity the 2026-09-19 A_cross bug got wrong by
+    ~1.9x -- this takes the geometry's word over the parameter arithmetic.
+
+    Faces spanning the full height are the lateral ones; end-cap annuli have
+    zero Y extent, and edge fillets span less than the full height.
+    """
+    lateral = []
+    for sd, st in gmsh.model.getBoundary([(d, t)], oriented=False):
+        sd, st = abs(sd), abs(st)
+        _, sy0, _, _, sy1, _ = occ.getBoundingBox(sd, st)
+        if abs((sy1 - sy0) - height) < 1e-9:
+            lateral.append(occ.getMass(sd, st) / (2 * math.pi * height))
+    assert len(lateral) == 2, (
+        f"expected 2 full-height lateral faces on coil solid {t}, found "
+        f"{len(lateral)} (radii {[round(r*1e3, 3) for r in lateral]} mm) -- the "
+        f"solid is probably not the plain ring about Y this assumes")
+    return min(lateral), max(lateral)
+
+
+SMALL_HOLE_R_MAX = 0.004   # m. Fills 2mm lead holes, 5.1mm tapped holes, 7.1mm
+                           # bolt clearances; keeps the 14.6mm gas-feed holes.
+
+
+def _face_samples(tag: int, n: int = 16):
+    """Points ON a (trimmed) face, from the B-rep parametrisation."""
+    import numpy as np
+    lo, hi = gmsh.model.getParametrizationBounds(2, tag)
+    U, V = np.meshgrid(np.linspace(lo[0], hi[0], n), np.linspace(lo[1], hi[1], n))
+    P = np.array(gmsh.model.getValue(2, tag, np.stack([U.ravel(), V.ravel()], 1).ravel())).reshape(-1, 3)
+    keep = [gmsh.model.isInside(2, tag, list(p)) for p in P]
+    return P[np.array(keep, bool)]
+
+
+def fill_small_holes(occ, dimtag, r_max: float = SMALL_HOLE_R_MAX):
+    """Remove holes of radius < r_max (axis along Y) from one iron body.
+
+    BPL-1000's iron carries bolt clearances, tapped core ends and 2mm lead
+    holes. Resolving them needs sub-mm elements, which took the mesh to
+    ~1.3M DOFs and the direct LU solve past 31 GB of RAM (2026-10-03). They
+    are magnetically negligible -- and the bolt holes are filled with steel
+    bolts in the real hardware, so solid is closer to it than empty -- so
+    they are filled with OCC's defeaturing (the user chose this over an
+    iterative solver or a coarser mesh).
+
+    A hole is found from its lateral face: an exact circle (least-squares
+    residual < 1um) of radius < r_max. Every face of the body lying wholly
+    within that radius of the same axis -- lateral wall, bottom, drill-point
+    cone -- is part of the hole and goes to occ.defeature together.
+    """
+    import numpy as np
+    occ.synchronize()
+    faces = [abs(t) for _, t in gmsh.model.getBoundary([dimtag], oriented=False)]
+    samples = {f: _face_samples(f) for f in faces}
+    holes = []
+    for f, P in samples.items():
+        if len(P) < 10 or np.ptp(P[:, 1]) < 1e-6:
+            continue
+        x, z = P[:, 0], P[:, 2]
+        A = np.c_[2 * x, 2 * z, np.ones_like(x)]
+        (cx, cz, c), *_ = np.linalg.lstsq(A, x * x + z * z, rcond=None)
+        r = math.sqrt(max(c + cx * cx + cz * cz, 0.0))
+        if r < r_max and np.abs(np.hypot(x - cx, z - cz) - r).max() < 1e-6:
+            holes.append((cx, cz, r))
+    if not holes:
+        return dimtag
+    hole_faces = set()
+    for cx, cz, r in holes:
+        for f, P in samples.items():
+            if len(P) and np.hypot(P[:, 0] - cx, P[:, 2] - cz).max() < r + 1e-5:
+                hole_faces.add(f)
+    out = occ.defeature([dimtag[1]], sorted(hole_faces))
+    occ.synchronize()
+    vols = [dt for dt in out if dt[0] == 3]
+    assert len(vols) == 1, f"defeaturing body {dimtag} gave {vols}"
+    print(f"  filled {len(holes)} hole(s) (r = "
+          f"{sorted({round(h[2] * 1e3, 2) for h in holes})} mm, {len(hole_faces)} faces) in body {dimtag[1]}")
+    return vols[0]
+
+
 def base_name(entity_name: str) -> str:
     """Gmsh/OCC entity names come back as e.g.
     'Shapes/BPL-700 Assembly/outer_coil/outer_coil' -- last path segment
@@ -249,8 +366,11 @@ def build(params_in: dict, out_dir: str, step_path: str | None,
     iron_dimtags = []
     coil_entries = []  # (base_name, dimtag)
     chamber_dimtag = None
-    # emag_height = 1.125in is spacer height 0: Onshape then drops the body
-    # entirely rather than exporting a zero-thickness solid.
+    inert_names_seen = []
+    # emag_height = 1.625in is spacer height 0 on BPL-1000 (it was 1.125in on
+    # BPL-700): Onshape then drops the body entirely rather than exporting a
+    # zero-thickness solid. 1.625in is also the parameter's declared minimum,
+    # so the spacer is absent at the default configuration.
     has_spacer = False
     for d, t in dimtags:
         name = base_name(gmsh.model.getEntityName(d, t))
@@ -266,16 +386,26 @@ def build(params_in: dict, out_dir: str, step_path: str | None,
         elif name == CHAMBER_NAME:
             assert chamber_dimtag is None, "expected exactly 1 chamber solid"
             chamber_dimtag = (d, t)
+        elif name in INERT_NAMES:
+            inert_names_seen.append(name)   # not meshed -- falls into Air
+        elif name in BPL700_RENAMES:
+            raise AssertionError(
+                f"body {name!r} is a BPL-700 name; this pipeline targets BPL-1000 "
+                f"(it would be {BPL700_RENAMES[name]!r} here). The STEP is from the "
+                f"old document -- check onshape/cache.py's DID/EID.")
         else:
             raise AssertionError(f"unrecognized body name {name!r} (tag {t}) -- "
-                                  f"update IRON_CORE_NAMES/COIL_NAMES/CHAMBER_* above")
+                                  f"update IRON_CORE_NAMES/COIL_NAMES/INERT_NAMES/"
+                                  f"CHAMBER_* above")
 
     n_expected_iron = 7 + (1 if include_chamber_spacer_as_iron and has_spacer else 0)
     assert len(iron_dimtags) == n_expected_iron, \
         f"expected {n_expected_iron} iron bodies, got {len(iron_dimtags)}"
     assert len(coil_entries) == 5, f"expected 5 coil bodies, got {len(coil_entries)}"
     assert chamber_dimtag is not None, "expected 1 chamber solid for channel-outline metadata"
-    print(f"Classified: {len(iron_dimtags)} iron, {len(coil_entries)} coil, 1 chamber (metadata only)")
+    print(f"Classified: {len(iron_dimtags)} iron, {len(coil_entries)} coil, "
+          f"1 chamber (metadata only), {len(inert_names_seen)} inert "
+          f"({', '.join(sorted(inert_names_seen)) or 'none'})")
 
     # --- Windings: real coil solids straight from the STEP, no primitive ---
     # construction needed. Winding0 = inner_coil (center), Winding1..4 =
@@ -285,9 +415,33 @@ def build(params_in: dict, out_dir: str, step_path: str | None,
     # operation, so bounding-box/center-of-mass queries on dimtags held
     # across a fuse call aren't reliable (hit empirically -- see git
     # history of this script for the stale-tag bbox mismatch this caused).
-    coil_entries.sort(key=lambda e: 0 if e[0] == "inner_coil" else 1)
-    winding_tags = [dt for _, dt in coil_entries]
-    winding_pole = [name for name, _ in coil_entries]  # "inner_coil"/"outer_coil" per winding
+    # BPL-1000 names all five coil solids "coil" -- unlike BPL-700, which had
+    # distinct inner_coil/outer_coil names -- so the pole has to come from
+    # geometry. The 4 outer coils sit on a symmetric ring about the thrust
+    # axis and the inner one sits on it, so the mean of all 5 centres IS the
+    # axis to within the ring's symmetry, and the inner coil is the one at
+    # (essentially) zero radius from it. Asserted, not assumed: the split has
+    # to come out 1 + 4 with a clear radial gap, or the geometry is not what
+    # this pipeline expects.
+    #
+    # The POLE LABELS stay "inner_coil"/"outer_coil": they are what EXCITATION
+    # and generate_regions.py key on, and they describe the magnetic role,
+    # which did not change with the CAD rename.
+    coil_coms = [occ.getCenterOfMass(d, t) for _, (d, t) in coil_entries]
+    mean_x = sum(c[0] for c in coil_coms) / len(coil_coms)
+    mean_z = sum(c[2] for c in coil_coms) / len(coil_coms)
+    radii = [math.hypot(c[0] - mean_x, c[2] - mean_z) for c in coil_coms]
+    order = sorted(range(len(coil_entries)), key=lambda i: radii[i])
+    assert radii[order[0]] < 1e-3, (
+        f"no coil sits on the thrust axis (closest is {radii[order[0]]*1e3:.2f} mm off) "
+        f"-- cannot identify the inner winding")
+    assert radii[order[1]] > 10 * max(radii[order[0]], 1e-6), (
+        f"inner/outer coil split is not clean: radii (mm) = "
+        f"{[round(radii[i]*1e3, 2) for i in order]}")
+    winding_tags = [coil_entries[i][1] for i in order]
+    winding_pole = ["inner_coil"] + ["outer_coil"] * (len(order) - 1)
+    print(f"Coil poles from geometry: 1 inner on-axis, {len(order)-1} outer at "
+          f"r = {radii[order[1]]*1e3:.2f} mm")
 
     # NOTE on occ.getBoundingBox(): confirmed empirically (see git history of
     # this line) that it returns a LOOSE/conservative box on these curved,
@@ -308,9 +462,7 @@ def build(params_in: dict, out_dir: str, step_path: str | None,
         d, t = dt
         _, ymin, _, _, ymax, _ = occ.getBoundingBox(d, t)
         height = ymax - ymin
-        id_in = params_in["inner_coil_id"] if name == "inner_coil" else params_in["outer_coil_id"]
-        od_in = params_in["inner_coil_od"] if name == "inner_coil" else params_in["outer_coil_od"]
-        r_in_m, r_out_m = id_in * INCH_TO_M / 2, od_in * INCH_TO_M / 2
+        r_in_m, r_out_m = coil_radii(occ, d, t, height)
         r_mean = (r_in_m + r_out_m) / 2
         vol = occ.getMass(d, t)
 
@@ -336,7 +488,8 @@ def build(params_in: dict, out_dir: str, step_path: str | None,
             f"is probably not the constant-section ring about Y that this assumes"
         )
         cx, _, cz = occ.getCenterOfMass(d, t)
-        winding_meta.append(dict(index=i, pole=name, A_cross=A_cross, loc=(cx, cz)))
+        winding_meta.append(dict(index=i, pole=name, A_cross=A_cross, loc=(cx, cz),
+                                 build=r_out_m - r_in_m))
     print(f"Built {len(winding_tags)} winding entries (from real CAD, no Gmsh primitives)")
 
     # --- Fuse iron bodies INCREMENTALLY -------------------------------------
@@ -344,6 +497,8 @@ def build(params_in: dict, out_dir: str, step_path: str | None,
     # geometry (OCC's fuzzy boolean union is order/grouping-dependent) --
     # see scratch_whole_assembly_import.py's docstring. Incremental fuse
     # (fold one part in at a time) gives the correct single solid.
+    iron_dimtags = [fill_small_holes(occ, dt) for dt in iron_dimtags]
+
     gmsh.option.setNumber("Geometry.ToleranceBoolean", 1e-6)
     iron_current = [iron_dimtags[0]]
     for dt in iron_dimtags[1:]:
@@ -428,12 +583,29 @@ def build(params_in: dict, out_dir: str, step_path: str | None,
     # (overlapping facets)" at inner_coil_id=0.875in -- and (b) made mesh
     # resolution vary across a geometry sweep, i.e. mesh noise in the
     # comparison. The cap keeps every sweep point at the baseline resolution.
-    min_winding_wall = min(
-        (params_in["inner_coil_od"] - params_in["inner_coil_id"]) / 2,
-        (params_in["outer_coil_od"] - params_in["outer_coil_id"]) / 2,
-        0.1875,
-    ) * INCH_TO_M
-    gmsh.option.setNumber("Mesh.MeshSizeMin", min_winding_wall / 2)
+    # Builds come from coil_radii()'s measurement of the real solids. (On
+    # BPL-1000 they match coreod/coilt arithmetic exactly -- a 2026-10-02
+    # note here claiming a ~0.5mm departure was a centroid-axis artefact,
+    # see bpl1000_geometry.py -- but measuring stays the safer source.)
+    # FIXED at the BPL-700 baseline build (0.1875in), not min()-ed with the
+    # measured builds as it was: BPL-1000's default inner build is 0.125in,
+    # which drove the near-surface size to 1.6mm, 884k nodes and 1.54M DOFs,
+    # and the direct LU solve then needed ~58 GB on a 31 GB machine
+    # (2026-10-03). A fixed size also keeps resolution identical across a
+    # sweep, which is what the cap above was for; the thinnest swept coils
+    # (0.0625in build) are then ~1 element thick, which a uniform-J source
+    # region tolerates -- em_sizing_sweep.py's mesh-noise check bounds it.
+    # The measured builds are still recorded in winding_meta.
+    min_winding_wall = 0.1875 * INCH_TO_M
+    # BPL-1000's iron carries small holes the uniform floor cannot resolve:
+    # 2mm holes through the back plate, 5.1mm tapped holes in every core end
+    # and 7.1mm bolt clearances. At a ~1.6mm floor their surface meshes come
+    # out invalid and tetgen fails with "PLC Error: A segment and a facet
+    # intersect". Curvature sizing refines exactly those holes (and nothing
+    # flat), so the floor is lowered to let it work; the Threshold field
+    # below still sets the resolution everywhere else.
+    gmsh.option.setNumber("Mesh.MeshSizeMin", 2.5e-4)
+    gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", 12)
     gmsh.option.setNumber("Mesh.MeshSizeMax", air_radius / 4)
 
     refine_surfs = list(embedded_boundary_tags)
@@ -449,8 +621,37 @@ def build(params_in: dict, out_dir: str, step_path: str | None,
 
     try:
         gmsh.model.mesh.generate(3)
-    except Exception:
-        gmsh.finalize()   # leaving gmsh initialised makes the NEXT build write an empty mesh
+    except Exception as e:
+        # Report WHICH surface failed and what it belongs to. "Invalid
+        # boundary mesh (overlapping facets)" means the 2D mesh on that face
+        # self-intersects, which on this geometry means the size field is too
+        # coarse for a small feature -- but the message alone does not say
+        # which feature, and guessing wastes a multi-minute rebuild per guess.
+        print(f"\n3D mesh FAILED: {e}")
+        for stag in {int(m) for m in re.findall(r"surface (\d+)", str(e))}:
+            try:
+                bb = gmsh.model.occ.getBoundingBox(2, stag)
+                area = gmsh.model.occ.getMass(2, stag)
+                dx, dy, dz = bb[3] - bb[0], bb[4] - bb[1], bb[5] - bb[2]
+                owners = [v for (_d, v) in gmsh.model.getEntities(3)
+                          if (2, stag) in [(abs(a), abs(b)) for a, b in
+                                           gmsh.model.getBoundary([(3, v)], oriented=False)]]
+                print(f"  surface {stag}: area={area:.3e} m^2  extent="
+                      f"({dx*1e3:.2f}, {dy*1e3:.2f}, {dz*1e3:.2f}) mm  "
+                      f"bounds volumes {owners}")
+                print(f"    bbox x[{bb[0]*1e3:.3f}, {bb[3]*1e3:.3f}] "
+                      f"y[{bb[1]*1e3:.3f}, {bb[4]*1e3:.3f}] "
+                      f"z[{bb[2]*1e3:.3f}, {bb[5]*1e3:.3f}] mm")
+                curves = gmsh.model.getBoundary([(2, stag)], oriented=False)
+                lens = sorted(gmsh.model.occ.getMass(1, abs(ct)) * 1e3 for _cd, ct in curves)
+                print(f"    {len(curves)} bounding curve(s), lengths (mm): "
+                      f"{[round(x, 3) for x in lens[:8]]}")
+                print(f"    size field here = "
+                      f"{gmsh.model.mesh.field.eval(2, (bb[0]+bb[3])/2, (bb[1]+bb[4])/2, (bb[2]+bb[5])/2)*1e3:.3f} mm"
+                      if hasattr(gmsh.model.mesh.field, "eval") else "")
+            except Exception as inner:
+                print(f"  surface {stag}: could not characterise ({inner})")
+        gmsh.finalize()  # leaving gmsh initialised makes the NEXT build write an empty mesh
         raise
 
     gmsh.option.setNumber("Mesh.MshFileVersion", 2.2)
@@ -550,28 +751,21 @@ def build(params_in: dict, out_dir: str, step_path: str | None,
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--emag-height", type=float, default=ONSHAPE_DEFAULTS_IN["emag_height"])
-    ap.add_argument("--inner-coil-id", type=float, default=ONSHAPE_DEFAULTS_IN["inner_coil_id"])
-    ap.add_argument("--inner-coil-od", type=float, default=ONSHAPE_DEFAULTS_IN["inner_coil_od"])
-    ap.add_argument("--outer-coil-id", type=float, default=ONSHAPE_DEFAULTS_IN["outer_coil_id"])
-    ap.add_argument("--outer-coil-od", type=float, default=ONSHAPE_DEFAULTS_IN["outer_coil_od"])
+    # One flag per real Onshape Configuration parameter, generated from the
+    # defaults dict so the two cannot drift apart (they did across the
+    # BPL-700 -> BPL-1000 retarget, when the parameter set changed wholesale).
+    for pid, default in ONSHAPE_DEFAULTS_IN.items():
+        ap.add_argument(f"--{pid.replace('_', '-')}", type=float, default=default)
     ap.add_argument("--out-dir", type=str, default=".")
     ap.add_argument("--step-path", type=str, default=None,
                      help="Bypass Onshape entirely and import this STEP file directly "
                           "(must still match the ID/OD args above for A_cross/mesh sizing).")
     ap.add_argument("--exclude-chamber-spacer", action="store_true",
-                     help="Treat chamber_spacer as magnetically inert (excluded from the iron "
-                          "fuse) instead of the default iron treatment -- its real material "
-                          "isn't confirmed yet, see module docstring.")
+                     help="Treat the spacer as magnetically inert (excluded from the iron "
+                          "fuse) instead of the default iron treatment.")
     args = ap.parse_args()
 
-    params_in = dict(
-        emag_height=args.emag_height,
-        inner_coil_id=args.inner_coil_id,
-        inner_coil_od=args.inner_coil_od,
-        outer_coil_id=args.outer_coil_id,
-        outer_coil_od=args.outer_coil_od,
-    )
+    params_in = {pid: getattr(args, pid) for pid in ONSHAPE_DEFAULTS_IN}
     build(params_in, args.out_dir, args.step_path,
           include_chamber_spacer_as_iron=not args.exclude_chamber_spacer)
 
