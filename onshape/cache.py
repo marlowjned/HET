@@ -55,9 +55,16 @@ from .client import get_client
 CACHE_DIR = Path(__file__).resolve().parent / "cad_cache"
 DB_PATH = CACHE_DIR / "index.db"
 
-DID = "16412e6567201641a88630bb"
-WID = "50bbbc3be2fb38fd925a2589"
-EID = "6bfc5ca353d5636ad82fb365"  # BPL-1000 Assembly element
+# Frozen copy of BPL-1000 that nobody edits (given by the user 2026-10-03,
+# after the original document was edited mid-sweep and broke two runs).
+DID = "55a1735753623fa20375b2a1"
+WID = "ace7b04e53ccc5753b1328eb"
+EID = "29cb3581de2d0ec45c919332"  # BPL-1000 Assembly element
+
+# The original, actively edited BPL-1000 document. Not swept against.
+LIVE_BPL1000 = dict(DID="16412e6567201641a88630bb",
+                    WID="50bbbc3be2fb38fd925a2589",
+                    EID="6bfc5ca353d5636ad82fb365")
 
 # Previous target, for provenance only -- see module docstring.
 OLD_BPL700 = dict(DID="c41ea30140eac94bca56baf9",
@@ -86,6 +93,12 @@ PARAM_RANGE_IN = {
 }
 
 DEFAULTS_IN = {k: v[2] for k, v in PARAM_RANGE_IN.items()}
+
+# Microversion of the most recent get_step_for_config() result, so a caller
+# can record which CAD state a run actually used. Added 2026-10-03 after the
+# document was edited mid-sweep and finished points came from 4 different
+# microversions without anything recording it.
+LAST_PULL = {"microversion": None, "step_file": None}
 
 POLL_INTERVAL_S = 2.0
 POLL_TIMEOUT_S = 120.0
@@ -217,6 +230,7 @@ def get_step_for_config(params: dict, force_refresh: bool = False) -> Path:
                 step_path = Path(step_file)
                 if cached_microversion == microversion and step_path.exists():
                     conn.close()
+                    LAST_PULL.update(microversion=microversion, step_file=str(step_path))
                     return step_path
                 # stale (document changed since this was cached) -- fall through and re-pull
 
@@ -230,4 +244,5 @@ def get_step_for_config(params: dict, force_refresh: bool = False) -> Path:
         )
         conn.commit()
         conn.close()
+        LAST_PULL.update(microversion=microversion, step_file=str(step_path))
         return step_path

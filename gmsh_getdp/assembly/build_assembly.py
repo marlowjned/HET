@@ -97,7 +97,14 @@ COIL_NAMES = {"coil"}
 #     (axes +/-26.86 mm from the thrust axis, measured 2026-10-03). Treated
 #     as inert PROVISIONALLY: their material is not confirmed. They sit
 #     outside the magnetic circuit, behind the back plate.
-INERT_NAMES = {"anode_axial", "Revolve1"}
+#   Revolve2, Fillet1, Imported1 -- bodies that appeared in the document
+#     transiently while it was being edited mid-sweep (2026-10-03, ~15:30).
+#     Treated as inert on the user's instruction; not present at the
+#     microversion current at 15:52.
+INERT_NAMES = {"anode_axial", "Revolve1", "Revolve2", "Fillet1", "Imported1"}
+
+# Body names build() treated as inert because it did not recognise them.
+LAST_UNKNOWN_BODIES: list[str] = []
 
 # BPL-1000 renamed every body relative to BPL-700. Kept so a stale STEP or an
 # old run directory is diagnosed by name instead of failing as "unrecognized".
@@ -367,6 +374,7 @@ def build(params_in: dict, out_dir: str, step_path: str | None,
     coil_entries = []  # (base_name, dimtag)
     chamber_dimtag = None
     inert_names_seen = []
+    LAST_UNKNOWN_BODIES.clear()
     # emag_height = 1.625in is spacer height 0 on BPL-1000 (it was 1.125in on
     # BPL-700): Onshape then drops the body entirely rather than exporting a
     # zero-thickness solid. 1.625in is also the parameter's declared minimum,
@@ -394,9 +402,15 @@ def build(params_in: dict, out_dir: str, step_path: str | None,
                 f"(it would be {BPL700_RENAMES[name]!r} here). The STEP is from the "
                 f"old document -- check onshape/cache.py's DID/EID.")
         else:
-            raise AssertionError(f"unrecognized body name {name!r} (tag {t}) -- "
-                                  f"update IRON_CORE_NAMES/COIL_NAMES/INERT_NAMES/"
-                                  f"CHAMBER_* above")
+            # Unknown bodies are inert by the user's instruction (2026-10-03):
+            # the document was being edited during sweeps and kept gaining
+            # new non-magnetic bodies (Revolve2, Fillet1, Imported1,
+            # Extrude1...). Recorded in LAST_UNKNOWN_BODIES so each run can
+            # report what it ignored; the iron and coil counts are still
+            # asserted below, so a renamed MAGNETIC body still fails loudly.
+            print(f"WARNING: unrecognized body {name!r} (tag {t}) treated as inert")
+            inert_names_seen.append(name)
+            LAST_UNKNOWN_BODIES.append(name)
 
     n_expected_iron = 7 + (1 if include_chamber_spacer_as_iron and has_spacer else 0)
     assert len(iron_dimtags) == n_expected_iron, \

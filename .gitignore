@@ -18,3 +18,4 @@ gmsh_getdp/**/__pycache__/
 gmsh_getdp/assembly/sweep_runs/
 gmsh_getdp/assembly/sweep_runs_bpl1000/
 report/*.pdf
+gmsh_getdp/assembly/sweep_runs_bpl1000_livedoc/

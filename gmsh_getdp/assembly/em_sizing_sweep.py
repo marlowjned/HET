@@ -53,11 +53,11 @@ sys.path.insert(0, str(HERE.parents[1] / "thermal"))
 from bpl1000_geometry import (CHANNEL, IN, INNER_OD_MAX_IN, OUTER_OD_MAX_IN,  # noqa: E402
                               coil_top_y, inner_coil_bottom_y, Y_FRONT_PLATE_INNER,
                               CORE_BOLT_HOLE_R)
-from build_assembly import build, EXCITATION  # noqa: E402
+from build_assembly import build, EXCITATION, LAST_UNKNOWN_BODIES  # noqa: E402
 from emag_sweep import run_getdp, rewrite_channel as _rewrite_channel_bpl700  # noqa: E402,F401
 from field_quality import axial_profile, evaluate_field_quality  # noqa: E402
 from generate_regions import generate_regions_pro  # noqa: E402
-from onshape.cache import DEFAULTS_IN  # noqa: E402
+from onshape.cache import DEFAULTS_IN, LAST_PULL  # noqa: E402
 from params_utils import parse_params  # noqa: E402
 from pos_utils import parse_pos_elements  # noqa: E402
 
@@ -182,6 +182,8 @@ def run_point(cfg, force=False):
 
     t0 = time.time()
     build(cfg, str(run_dir), None, include_chamber_spacer_as_iron=True)
+    cad_microversion = LAST_PULL["microversion"]
+    unknown_bodies = ";".join(sorted(set(LAST_UNKNOWN_BODIES)))
     rewrite_channel(run_dir / "assembly_params.txt")
     params = parse_params(run_dir / "assembly_params.txt")
     t_build = time.time() - t0
@@ -252,7 +254,8 @@ def run_point(cfg, force=False):
              inner_em_od_in=cfg["iem_coreod"] + cfg["iem_coilt"],
              outer_em_od_in=cfg["oem_coreod"] + cfg["oem_coilt"],
              envelope_area_m2=area, n_channel_elems=int(ch.sum()),
-             build_s=round(t_build, 1), solve_s=round(t_solve, 1), iron_mur=IRON_MUR)
+             build_s=round(t_build, 1), solve_s=round(t_solve, 1), iron_mur=IRON_MUR,
+             cad_microversion=cad_microversion, unknown_inert_bodies=unknown_bodies)
     m.update({f"best_{k}": v for k, v in best.items()})
     m.update({f"ref_{k}": v for k, v in ref.items()})
     m["linear_valid"] = bool(max(best["inner_shaft_B_max_T"], best["outer_shaft_B_max_T"],
