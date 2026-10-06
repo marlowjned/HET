@@ -71,12 +71,26 @@ Include "assembly_regions_generated.pro";
 // 50% -> 100% sat at rel. residual ~0.11 for all 60 iterations. Finer steps
 // above 50% keep each Picard step close to its starting field.
 DefineConstant[ FineRamp = 0 ];
+// Newton (-setnumber Newton 1): add the B-H tangent dh/db (JacNL term) and
+// solve for increments with GenerateJac/SolveJac, instead of plain Picard.
+// Added 2026-10-06 as the fallback when Picard stalls near the knee (it did
+// at 75% load on BPL-700's 0.750in core). Quadratic convergence, so it uses
+// a short 3-stage ramp.
+DefineConstant[ Newton = 0 ];
+// Newton step relaxation (1 = full step); lower it if a stage chatters.
+DefineConstant[ NL_relax = 1.0 ];
 If(LinearIron)
 Function {
   RampFrac() = {1.0};
 }
 Else
-If(FineRamp)
+If(Newton)
+Function {
+  // 0.5/0.8/1.0 chattered at full load on the 0.75in-core design even with
+  // Akima B-H (2026-10-06), so the last 20% is split.
+  RampFrac() = {0.5, 0.8, 0.9, 1.0};
+}
+ElseIf(FineRamp)
 Function {
   RampFrac() = {0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0};
 }
@@ -165,6 +179,10 @@ Formulation {
       // using the previous iteration's {d a} as the linearization point.
       Galerkin { [ nu[{d a}] * Dof{d a}, {d a} ];
         In Iron; Jacobian JVol; Integration Int1; }
+      If(Newton)
+      Galerkin { JacNL[ dhdb_NL[{d a}] * Dof{d a}, {d a} ];
+        In Iron; Jacobian JVol; Integration Int1; }
+      EndIf
       Galerkin { [ -Js[], {a} ];
         In DomainC; Jacobian JVol; Integration Int1; }
     }
@@ -186,6 +204,20 @@ Resolution {
       // stage -- every later stage continues from the previous stage's
       // converged field, not from zero.
       InitSolution[Sys_a];
+      If(Newton)
+      // GetDP 3.5 segfaults on a plain Generate when the formulation holds a
+      // JacNL term (tested 2026-10-06), so the Newton path assembles ONLY
+      // through GenerateJac and converges on the solution increment via
+      // IterativeLoop (relative increment < NL_tol_rel).
+      For n In {0:#RampFrac()-1}
+        Evaluate[ $IFrac = RampFrac(n) ];
+        Print[{n}, Format "IFrac step %g: Newton start"];
+        IterativeLoop[NL_iter_max, NL_tol_rel, NL_relax]{
+          GenerateJac[Sys_a]; SolveJac[Sys_a];
+        }
+        Print[{n}, Format "IFrac step %g: Newton done"];
+      EndFor
+      Else
       For n In {0:#RampFrac()-1}
         Evaluate[ $IFrac = RampFrac(n) ];
         Generate[Sys_a]; Solve[Sys_a];
@@ -201,6 +233,7 @@ Resolution {
             Format "IFrac step %g, NL iter %03g: residual abs %14.12e rel %14.12e"];
         }
       EndFor
+      EndIf
       SaveSolution[Sys_a];
     }
   }

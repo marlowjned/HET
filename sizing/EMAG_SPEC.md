@@ -23,7 +23,7 @@ Common to all five magnets:
 | CAD coil OD (window) | 1.125 in | 1.0625 in |
 | Fit limit | 1.385 in (chamber bore) | 1.720 in (chamber outer wall) |
 | Required ampere-turns (300 G at exit) | 352.0 | 223.4 per coil |
-| **Channel current** | **1.53 A** | **1.21 A** |
+| **Channel current** | **1.53 A** (1.54 A with nonlinear iron) | **1.21 A** (1.22 A with nonlinear iron) |
 | Resistance at 20 °C / hot | 0.557 / 0.643 Ω | 0.429 / 0.494 Ω per coil |
 | Channel voltage (hot, coils only) | 0.98 V | 2.40 V (4 in series) |
 | Power | 1.51 W | 0.73 W per coil, 2.91 W total |
@@ -97,7 +97,7 @@ Full sweep data: `gmsh_getdp/assembly/em_sizing_results.csv` and `sizing/em_wind
 
 ## Known biases and open items
 
-- **Linear iron (μr 1500).** Peak core flux is 0.66 T, well below the knee. On BPL-700, linear iron read +1.2% against a nonlinear solve; this geometry hasn't been checked nonlinearly. That bias, the A36 B-H proxy, and the FEM spreading current over the whole window (−0.8% on BPL-700) all mean the real hardware will want slightly more current than modelled. The two-channel supply absorbs this.
+- **Nonlinear iron (checked 2026-10-06).** With the A36-proxy B-H curve, the exit field comes out 0.73% below linear at 90% of spec current (fully converged) and 0.50% below at full current. Full current reached its iteration cap: a few corner elements sit on the B-H knee at ~1.1 T. **Set the channels to 1.54 A inner and 1.22 A outer.** Both corrections round to these values at 10 mA resolution. Field shape is unchanged (radial purity 98.6%). Method and figures: `gmsh_getdp/assembly/field_cross_sections.py --nonlinear final --newton --relax 0.7`. The B-H proxy and the FEM spreading current over the whole window (−0.8% on BPL-700) still bias toward needing slightly more current; the two-channel supply absorbs this.
 - **Packing.** The design assumes square packing. Hand winding usually lands between square and hex packing and may fit more turns. Count what you actually wind, then set each channel to required ampere-turns ÷ turns.
 - **Non-magnetic bodies.** `Revolve1` (the gas-feed fittings) and anything else the pipeline didn't recognise are treated as non-magnetic, at the user's instruction.
 - **Arcing and isolation.** The film handles turn-to-turn insulation. Size the coil-to-core ground insulation, the over-wrap and the lead insulation to the potential difference set by how the magnet supply is referenced, not to the coils' few volts. The discharge voltage and grounding scheme are still to be decided.

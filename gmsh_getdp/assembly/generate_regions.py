@@ -129,7 +129,7 @@ def _gmsh_list(values):
 
 
 def generate_regions_pro(params, excitation, out_path="assembly_regions_generated.pro",
-                         iron_mur=None):
+                         iron_mur=None, smooth_bh=False):
     """iron_mur=None (default): nonlinear iron on the B-H curve below.
     iron_mur=<number>: constant-permeability iron instead -- for geometry
     sweeps, where the iron sits below the knee and the circuit is
@@ -163,13 +163,38 @@ def generate_regions_pro(params, excitation, out_path="assembly_regions_generate
     lines.append("  // Iron B-H curve. The hardware is ASTM A36; these are AISI 1008")
     lines.append("  // points used as a PROXY -- see generate_regions.py for why, which")
     lines.append("  // way the error runs, and its rough size.")
-    lines.append(f"  AISI1008_H() = {_gmsh_list(AISI1008_H)};")
-    lines.append(f"  AISI1008_B() = {_gmsh_list(AISI1008_B)};")
+    H_tab, B_tab = list(AISI1008_H), list(AISI1008_B)
+    if smooth_bh:
+        # Saturation tail: past the table's last point the iron adds no more
+        # magnetisation, so B rises at mu0 per unit H. Without it the
+        # interpolation EXTRAPOLATES past 2.585 T, and corner elements at
+        # full load go there -- the likely cause of Newton chattering at 100%
+        # load on the 0.75in-core design (2026-10-06) after converging
+        # cleanly to 90%. Physical, and standard practice for FEM B-H data.
+        for b in (2.7, 3.0, 3.5, 4.5, 6.0, 10.0):
+            H_tab.append(H_tab[-1] + (b - B_tab[-1]) / MU0)
+            B_tab.append(b)
+    lines.append(f"  AISI1008_H() = {_gmsh_list(H_tab)};")
+    lines.append(f"  AISI1008_B() = {_gmsh_list(B_tab)};")
     lines.append("  AISI1008_B2() = AISI1008_B()^2;")
     lines.append("  AISI1008_nu_list() = AISI1008_H() / AISI1008_B();")
     lines.append("  AISI1008_nu_list(0) = AISI1008_nu_list(1);  // avoid 0/0 at B=0")
     lines.append("  AISI1008_nu_b2_list() = ListAlt[AISI1008_B2(), AISI1008_nu_list()];")
-    lines.append("  AISI1008_nu[] = InterpolationLinear[SquNorm[$1]]{AISI1008_nu_b2_list()};")
+    # smooth_bh: Akima instead of piecewise-linear interpolation of nu(|b|^2).
+    # Same data points; Akima is C1, so its derivative (the Newton tangent
+    # below) is continuous. With linear interpolation the tangent jumps at
+    # every table point, and Newton chattered between segments at full load
+    # on the 0.75in-core design (2026-10-06, residual stuck at 1e-4..2e-2
+    # for 40+ iterations). Use it with Newton=1.
+    interp = "InterpolationAkima" if smooth_bh else "InterpolationLinear"
+    lines.append(f"  AISI1008_nu[] = {interp}[SquNorm[$1]]{{AISI1008_nu_b2_list()}};")
+    # Newton tangent (used only when magnetostatics_assembly.pro runs with
+    # Newton=1): h = nu(|b|^2) b, so dh/db = nu I + 2 nu'(|b|^2) b(x)b. The
+    # JacNL term in the formulation carries only the second part; the first
+    # is already the Picard term. Standard GetDP form (cf. its
+    # Lib_Magnetostatics_a_phi.pro template).
+    lines.append(f"  AISI1008_dnudb2[] = d{interp}[SquNorm[$1]]{{AISI1008_nu_b2_list()}};")
+    lines.append("  dhdb_NL[] = 2 * AISI1008_dnudb2[$1#1] * SquDyadicProduct[#1];")
     lines.append("")
     lines.append("  nu[Air]  = 1 / mu0;")
     if iron_mur is None:

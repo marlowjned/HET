@@ -12,7 +12,13 @@ Geometries:
   final    -- sizing/EMAG_SPEC.md: 0.75 in cores, inner 230 t x 1.531 A,
               outer 184 t x 1.214 A
 
-Usage (from gmsh_getdp/assembly/):  python field_cross_sections.py
+Usage (from gmsh_getdp/assembly/):
+  python field_cross_sections.py                      # linear solves + figures
+  python field_cross_sections.py --nonlinear final [--scale 1.02]
+      # nonlinear (A36-proxy B-H, 9-stage ramp) on the SAME mesh as the
+      # linear run, under nl_watchdog.py; --scale multiplies both currents
+      # (the nonlinear field does not scale with current, so a correction
+      # to hit 300 G needs a re-solve, not a rescale).
 """
 import json
 import math
@@ -64,6 +70,111 @@ def solve(name, case):
     params = parse_params(run_dir / "assembly_params.txt")
     nodes, B = parse_pos_elements(run_dir / "b_assembly.pos")
     return params, nodes.mean(axis=1), B
+
+
+def core_flux(run_dir, params, cfg, scale_lin=1.0):
+    """Peak mean axial |B| in the inner and outer core shafts, from b_iron.pos."""
+    from bpl1000_geometry import coil_top_y, inner_coil_bottom_y, Y_FRONT_PLATE_INNER
+    from em_sizing_sweep import shaft_signed
+    inodes, Bi = parse_pos_elements(run_dir / "b_iron.pos")
+    ic = inodes.mean(axis=1)
+    top, pad = coil_top_y(cfg["emag_height"]), 0.002
+    ax_x, ax_z = params["axis_x"], params["axis_z"]
+    inner = np.nanmax(np.abs(shaft_signed(ic, Bi, ax_x, ax_z, cfg["iem_coreod"] * IN / 2,
+                                          inner_coil_bottom_y(cfg["iem_platet"]) + pad, top - pad)))
+    outer = max(np.nanmax(np.abs(shaft_signed(ic, Bi, cx, cz, cfg["oem_coreod"] * IN / 2,
+                                              Y_FRONT_PLATE_INNER + pad, top - pad)))
+                for cx, cz in (w["loc"] for w in params["windings"] if w["pole"] == "outer_coil"))
+    return inner * scale_lin, outer * scale_lin
+
+
+def solve_nonlinear(name, case, scale, newton=False):
+    """Nonlinear solve on the linear run's mesh, watched by nl_watchdog.py."""
+    import shutil
+    import subprocess
+    lin_dir = RUNS / name
+    run_dir = RUNS / (f"{name}_nl" + ("N" if newton else "") + ("" if scale == 1.0 else f"_x{scale:.4f}"))
+    run_dir.mkdir(parents=True, exist_ok=True)
+    for f in ("assembly.msh", "assembly_params.txt"):
+        shutil.copy(lin_dir / f, run_dir / f)
+    params = parse_params(run_dir / "assembly_params.txt")
+    if not (run_dir / "b_assembly.pos").exists():
+        ni_in, ni_out = (scale * v for v in case["ni"])
+        exc = {"inner_coil": dict(turns=1, current=ni_in, polarity=EXCITATION["inner_coil"]["polarity"]),
+               "outer_coil": dict(turns=1, current=ni_out, polarity=EXCITATION["outer_coil"]["polarity"])}
+        generate_regions_pro(params, exc, out_path=str(run_dir / "assembly_regions_generated.pro"),
+                             iron_mur=None, smooth_bh=newton)
+        (run_dir / "getdp.log").unlink(missing_ok=True)
+        if newton:
+            # Newton (B-H tangent, 3-stage ramp, IterativeLoop on the
+            # increment): converges in ~3 iterations per stage where Picard
+            # needs 6-16. nl_watchdog.py parses Picard's residual lines only,
+            # so it is not attached; IterativeLoop's own cap is NL_iter_max.
+            relax = float(sys.argv[sys.argv.index("--relax") + 1]) if "--relax" in sys.argv else 1.0
+            t = run_getdp(run_dir, ("-setnumber", "Newton", "1", "-setnumber", "NL_relax", str(relax)))
+            log = (run_dir / "getdp.log").read_text(errors="replace")
+            n_conv, n_stage = log.count("IterativeLoop converged"), log.count("Newton start")
+            # Never discard a finished solve: the field is saved and
+            # post-processed either way, and the convergence status travels
+            # with the result (compare.json "converged") so it is reported,
+            # not hidden.
+            (run_dir / "convergence.json").write_text(json.dumps(
+                {"stages_converged": n_conv, "stages": n_stage, "relax": relax}))
+            print(f"[{run_dir.name}] Newton solve {t / 60:.0f} min, {n_conv}/{n_stage} stages converged "
+                  f"(relaxation {relax})", flush=True)
+        else:
+            dog = subprocess.Popen([sys.executable, str(HERE / "nl_watchdog.py"), str(run_dir),
+                                    "0.5,0.6,0.7,0.75,0.8,0.85,0.9,0.95,1.0"],
+                                   stdout=open(run_dir / "watchdog.log", "w"), stderr=subprocess.STDOUT)
+            try:
+                t = run_getdp(run_dir, ("-setnumber", "FineRamp", "1"))
+                print(f"[{run_dir.name}] nonlinear solve {t / 60:.0f} min", flush=True)
+            finally:
+                if dog.poll() is None:
+                    try:
+                        dog.wait(timeout=60)
+                    except subprocess.TimeoutExpired:
+                        dog.kill()
+    nodes, B = parse_pos_elements(run_dir / "b_assembly.pos")
+    return run_dir, params, nodes.mean(axis=1), B
+
+
+def compare(name, case, scale, newton=False):
+    lin_params, lin_cent, lin_B = solve(name, case)
+    run_dir, params, cent, B = solve_nonlinear(name, case, scale, newton)
+    out = {}
+    for tag, P, C, BB, d in (("linear", lin_params, lin_cent, lin_B, RUNS / name),
+                             ("nonlinear", params, cent, B, run_dir)):
+        prof = axial_profile(C, BB, P["axis_x"], P["axis_z"], CHANNEL["channel_inner_r"],
+                             CHANNEL["channel_outer_r"], CHANNEL["channel_y_anode"],
+                             CHANNEL["channel_y_exit"], n_stations=20)
+        p = dict(prof, B_r=prof["B_r"] * 1e4, Bmag=prof["Bmag"] * 1e4)
+        fq = evaluate_field_quality(p, B_peak=TARGET_G)
+        ci, co = core_flux(d, P, case["cfg"])
+        out[tag] = dict(B_exit_G=float(p["B_r"][-1]), B_peak_G=float(np.nanmax(p["B_r"])),
+                        score=fq["composite_score"], purity=fq["radial_purity_pct"],
+                        inner_core_T=float(ci), outer_core_T=float(co), prof_s=p["s"].tolist(),
+                        prof_Br=p["B_r"].tolist())
+    lin_exit = out["linear"]["B_exit_G"] * scale     # linear scales exactly
+    out["scale"] = scale
+    out["method"] = "newton" if newton else "picard"
+    cj = run_dir / "convergence.json"
+    out["convergence"] = json.loads(cj.read_text()) if cj.exists() else None
+    out["nl_vs_lin_exit_pct"] = (out["nonlinear"]["B_exit_G"] / lin_exit - 1) * 100
+    out["current_scale_for_300G_estimate"] = scale * TARGET_G / out["nonlinear"]["B_exit_G"]
+    (run_dir / "compare.json").write_text(json.dumps(out, indent=2))
+    for tag in ("linear", "nonlinear"):
+        o = out[tag]
+        print(f"{name} {tag:9s}: exit {o['B_exit_G'] * (scale if tag == 'linear' else 1):6.1f} G, "
+              f"peak {o['B_peak_G'] * (scale if tag == 'linear' else 1):6.1f} G, score {o['score']:.2f}, "
+              f"purity {o['purity']:.2f}%, cores {o['inner_core_T'] * (scale if tag == 'linear' else 1):.3f}/"
+              f"{o['outer_core_T'] * (scale if tag == 'linear' else 1):.3f} T")
+    print(f"{name}: nonlinear exit field {out['nl_vs_lin_exit_pct']:+.2f}% vs linear at the same current; "
+          f"estimated current scale for 300 G: x{out['current_scale_for_300G_estimate']:.4f}")
+    meth = "newton" if newton else "picard"
+    draw(f"{name}_nonlinear_{meth}", dict(case, label=case["label"] + f" [NONLINEAR iron, {meth}]"),
+         params, cent, B)
+    return out
 
 
 def grid_slice(sl, s_lim, y_lim, n=320):
@@ -146,6 +257,11 @@ def profile_figure(profiles):
 
 def main():
     OUT.mkdir(exist_ok=True)
+    if "--nonlinear" in sys.argv:
+        name = sys.argv[sys.argv.index("--nonlinear") + 1]
+        scale = float(sys.argv[sys.argv.index("--scale") + 1]) if "--scale" in sys.argv else 1.0
+        compare(name, CASES[name], scale, newton="--newton" in sys.argv)
+        return
     profiles = {}
     for name, case in CASES.items():
         params, cent, B = solve(name, case)
