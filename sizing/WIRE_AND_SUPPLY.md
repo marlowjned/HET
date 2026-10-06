@@ -1,5 +1,11 @@
 # Magnet wire and power supply specification
 
+> **Superseded for the BPL-1000 design point by [`EMAG_SPEC.md`](EMAG_SPEC.md)
+> (2026-10-05):** AWG 20 polyimide unchanged; 0.75 in cores; inner 230 turns
+> at 1.53 A, outer 4 × 184 turns in series at 1.21 A; 4.4 W total. The wire
+> choice, the fiberglass findings and the supply recommendation below still
+> apply. The BPL-700 turn counts and currents do not.
+
 What wire to buy, how many turns of it fit, what currents that implies, and
 what supply drives it. Written 2026-09-30, when the previous design point's
 wire turned out not to be purchasable.
