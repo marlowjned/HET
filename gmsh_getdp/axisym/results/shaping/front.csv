@@ -1,0 +1,6 @@
+study,case,q,NI_inner,NI_outer,P_W,peak_offset_mm,exit_Br_pct,anode_Br_pct,anode_B_pct,half_depth_mm,sigma_mm,gauss_rms_pct,iron_B_max_T
+front,flat poles,0.2,413.37,82.674,2.476,-5.0,88.093,20.291,22.532,20.25,18.4,7.791,0.77
+front,"flat, front plate + cap 3.17 mm",0.2,483.91,96.782,2.941,-1.75,96.654,19.709,22.11,15.5,14.9,7.765,0.877
+front,"flat, front plate + cap 4.76 mm",0.2,455.701,91.14,2.698,-2.75,94.046,19.26,21.597,16.25,15.5,6.404,0.786
+front,"flat, front plate + cap 6.35 mm",0.2,436.959,87.392,2.569,-3.5,92.018,19.43,21.726,17.5,16.2,5.848,0.772
+front,"flat, front plate + cap 12.70 mm",0.2,400.605,80.121,2.519,-7.0,86.157,22.149,24.42,22.75,21.0,10.734,0.802

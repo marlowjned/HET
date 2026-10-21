@@ -1,0 +1,4 @@
+case,q,NI_inner,NI_outer,peak_offset_mm,exit_Br_pct,anode_Br_pct,anode_B_pct,half_depth_mm,sigma_mm,gauss_rms_pct,iron_B_max_T,P_W
+front only min power,0.2,1396.258,279.252,-4.75,89.344,-37.909,45.002,15.5,11.7,18.383,0.828,28.248
+front only min anode |B|,0.6,1054.456,632.674,-4.75,88.963,-37.817,37.818,15.5,11.8,18.624,0.735,36.877
+"both plates iron, q=0.20",0.2,413.488,82.698,-5.0,88.163,20.3,22.544,20.0,18.4,7.768,0.771,2.477
