@@ -20,13 +20,14 @@ mu0 = 4e-7 * Pi;
 
 Group {
   Windings = Region[{WInner, WOutIn, WOutOut, WTrim}];
-  Domain = Region[{Air, Iron, Ring, Windings}];
+  Domain = Region[{Air, Iron, Ring, Screen, Windings}];
 }
 
 Function {
   nu[Region[{Air, Windings}]] = 1 / mu0;
   nu[Iron] = 1 / (mu0 * MUR_IRON);
   nu[Ring] = 1 / (mu0 * MUR_RING);
+  nu[Screen] = 1 / (mu0 * MUR_SCREEN);
   js[WInner]  = Vector[0, 0, -NI_INNER / A_WIN];
   js[WOutIn]  = Vector[0, 0, -NI_OUTER / A_WOI];
   js[WOutOut] = Vector[0, 0,  NI_OUTER / A_WOO];
@@ -85,9 +86,9 @@ PostProcessing {
 PostOperation {
   { Name Post; NameOfPostProcessing PP;
     Operation {
-      Print[ b, OnGrid {$A, $B, 0} { {0.022120:0.031600:0.000948}, {-0.067846:-0.001826:0.00025}, {0} },
+      Print[ b, OnGrid {$A, $B, 0} { {CH_R0:CH_R1:CH_DR}, {CH_Y0:CH_Y1+1e-9:0.00025}, {0} },
              File "b_channel.txt", Format SimpleTable ];
-      Print[ b, OnElementsOf Region[{Iron, Ring}], Depth 0, File "b_iron.txt", Format SimpleTable ];
+      Print[ b, OnElementsOf Region[{Iron, Ring, Screen}], Depth 0, File "b_iron.txt", Format SimpleTable ];
       If(Map)
         // element-centroid values (Depth 0): far cheaper than OnGrid, which
         // locates every grid point in the mesh one by one

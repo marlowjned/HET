@@ -1,0 +1,2 @@
+case,objective,ref_rms_pct,anode_Br_pct,anode_B_pct,peak_offset_mm,exit_Br_pct,sigma_mm,P165_W,I165_inner_A,I165_outer_A,sat165,bz_back_p95,bz_back_max,axial_back,br_min,b_min,bz_anode,cap_t,cap_w,f_in,f_out,core_gap,coil_short,split_z,split_g,split_r,is_gap,os_gap,is_r0,is_t,os_r,os_t
+start,1.4461,1.4461,1.4496,2.5529,-2.5,94.2967,15.3,1.5599,0.909,0.7215,0.2835,13.6809,17.0348,5.9146,0.6739,2.0155,-2.0004,3.0,8.0,,,,,,,,20.0,20.0,14.6875,2.929,44.45,3.175

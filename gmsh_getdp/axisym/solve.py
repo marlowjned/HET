@@ -9,6 +9,7 @@ excitation is NI_in * b_inner + NI_out * b_outer, and both are kept.
     res = solve_case("baseline", {}, map_=True)
     res["channel"]["inner"]   # (N, 4): r, y, B_r, B_y on the channel grid (m, T)
 """
+import os
 import shutil
 import subprocess
 import sys
@@ -22,7 +23,8 @@ sys.path.insert(0, str(HERE))
 from geometry import build  # noqa: E402
 
 GETDP = HERE.parents[1] / "tools" / "getdp-3.5.0-Windows64" / "getdp.exe"
-RUNS = HERE / "runs"
+RUNS = HERE / ("runs" if os.environ.get("AXISYM_CONFIG", "base") == "base"
+               else f"runs_{os.environ['AXISYM_CONFIG']}")
 
 
 def _table(path):

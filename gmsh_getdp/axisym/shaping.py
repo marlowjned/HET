@@ -32,7 +32,7 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from explore import Q_SCAN, front_plate, pole_cap  # noqa: E402
-from geometry import (CHANNEL, DEFAULTS, R_IRON, R_RING, R_TRIM, R_WIN, R_WOI, R_WOO,  # noqa: E402
+from geometry import (CHANNEL, DEFAULTS, R_AIR, R_IRON, R_RING, R_TRIM, R_WIN, R_WOI, R_WOO,  # noqa: E402
                       Y_COIL_TOP, Y_EXIT, Y_FP_IN, layout)
 from metrics import combine, evaluate  # noqa: E402
 from solve import solve_case  # noqa: E402
@@ -191,7 +191,7 @@ def map_fig(items, fname, ncol=None):
         ax.tricontour(tri, a, levels=np.linspace(np.percentile(a, 0.5), np.percentile(a, 99.5), 40),
                       colors="w", linewidths=0.45, alpha=0.8)
         for reg, poly in layout(params):
-            ec = {R_IRON: "#c3c2b7", R_RING: "#c3c2b7", R_TRIM: "lime"}.get(reg, "#eda100")
+            ec = {R_IRON: "#c3c2b7", R_RING: "#c3c2b7", R_TRIM: "lime", R_AIR: "#ff4d4d"}.get(reg, "#eda100")
             ax.add_patch(Polygon(poly, closed=True, fill=False, ec=ec, lw=0.9))
         ax.add_patch(Polygon([(CHANNEL["r_in"], Y_EXIT), (CHANNEL["r_out"], Y_EXIT),
                               (CHANNEL["r_out"], CHANNEL["y_anode"]), (CHANNEL["r_in"], CHANNEL["y_anode"])],

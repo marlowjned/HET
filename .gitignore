@@ -19,4 +19,4 @@ gmsh_getdp/assembly/sweep_runs/
 gmsh_getdp/assembly/sweep_runs_bpl1000/
 report/*.pdf
 gmsh_getdp/assembly/sweep_runs_bpl1000_livedoc/
-gmsh_getdp/axisym/runs/
+gmsh_getdp/axisym/runs*/

@@ -31,7 +31,7 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from explore import front_plate, pole_cap  # noqa: E402
-from geometry import CHANNEL, DEFAULTS, R_IRON, R_RING, Y_COIL_TOP, Y_EXIT, Y_FP_IN, ring_geometry  # noqa: E402
+from geometry import CHANNEL, DEFAULTS, R_IRON, R_RING, R_SCREEN, Y_COIL_TOP, Y_EXIT, Y_FP_IN, ring_geometry  # noqa: E402
 from metrics import combine, shape_metrics  # noqa: E402
 from shaping import coil_power, map_fig, profile_fig, _mpl, PALETTE  # noqa: E402
 from solve import RUNS, solve_case  # noqa: E402
@@ -46,6 +46,15 @@ WORKERS = 12
 
 R_KEEP_IN = 20.2                 # inner screen / cap outer limit (channel keep-out 20.62)
 R_KEEP_OS = 49.0                 # outer screen outer limit (outer winding sheet at 49.3)
+R_CAP_MAX = 20.62                # pole cap radius limit
+OS_R_MIN = CHANNEL["r_out"] + 3  # outer screen inner radius limit
+from geometry import CONFIG  # noqa: E402
+if CONFIG == "bn":
+    from geometry import BN  # noqa: E402
+    R_KEEP_IN = BN["bore"] / 2 - 0.1                    # inner screen slips inside the BN bore
+    R_CAP_MAX = BN["bore"] / 2 - 0.1                    # pole cap inside the BN bore
+    OS_R_MIN = BN["od"] / 2 + 0.0                       # outer screen slips over the BN body
+    R_KEEP_OS = 2.5 * 25.4 - DEFAULTS["ocore_r"] - DEFAULTS["ocoil_build"] - 0.5   # outer coils at 50.0
 
 BASE = dict(fp_t=1.5, fp_w=15.0, cap_r=20.0, cap_t=1.5, cap_w=6.0,
             is_t=3.0, is_gap=6.0, is_flare=0.0, os_gap=6.0, os_t=3.0, os_r=40.0)
@@ -80,22 +89,23 @@ def feasible(x):
         return "wall < 1.5 mm"
     if x["fp_t"] > 9.525 + 1e-9 or x["cap_t"] > 9.525 + 1e-9:
         return "rim thicker than plate"
-    if x["cap_r"] > 20.62 + 1e-9:
+    if x["cap_r"] > R_CAP_MAX + 1e-9:
         return "cap past keep-out"
-    if x["cap_w"] > x["cap_r"] - DEFAULTS["core_r"] + 1e-9:
+    if x["cap_w"] > x["cap_r"] - x.get("core_r", DEFAULTS["core_r"]) + 1e-9:
         return "cap taper into the core"
-    if IS_R0 + x["is_t"] + x["is_flare"] > R_KEEP_IN + 1e-9:
+    if x.get("is_r0", IS_R0) + x["is_t"] + x["is_flare"] > R_KEEP_IN + 1e-9:
         return "inner screen past keep-out"
-    if x["os_r"] < CHANNEL["r_out"] + 3 or x["os_r"] + x["os_t"] > R_KEEP_OS:
+    if x["os_r"] < OS_R_MIN - 1e-9 or x["os_r"] + x["os_t"] > R_KEEP_OS + 1e-9:
         return "outer screen clashes"
     if min(x["is_gap"], x["os_gap"]) < 0.5 or x["is_flare"] < 0:
         return "gap/flare out of range"
     return None
 
 
-def inner_screen(t, gap, flare):
+def inner_screen(t, gap, flare, r0=None):
     y_tip = Y_FP_IN + gap
-    r0, r1 = IS_R0, IS_R0 + t
+    r0 = IS_R0 if r0 is None else r0
+    r1 = r0 + t
     if flare <= 0:
         return [(r0, Y_COIL_TOP), (r1, Y_COIL_TOP), (r1, y_tip), (r0, y_tip)]
     # outward flare: full width r1 + flare over the last 3 mm, 45-deg-ish ramp back to r1
@@ -108,13 +118,99 @@ def outer_screen(r0, t, gap):
     return [(r0, Y_COIL_TOP), (r0 + t, Y_COIL_TOP), (r0 + t, y_tip), (r0, y_tip)]
 
 
+WIRE = 0.89                     # AWG 20 heavy polyimide, mm over insulation (spec windings: 46 x 5, 46 x 4)
+N_TURNS_IN, N_TURNS_OUT = 230, 184
+
+
+def layered(n_per_layer, turns):
+    """(length, build) of a square-wound layered coil: n turns per layer, enough layers for `turns`."""
+    layers = -(-turns // n_per_layer)
+    return n_per_layer * WIRE, layers * WIRE
+
+
+def cap_poly(R, T, t, w):
+    """Pole cap of radius R and thickness T, front face on the exit plane; back-side chamfer from the
+    edge face (length t) to radius R - w on the back face."""
+    if t >= T:
+        return [(0, Y_EXIT), (R, Y_EXIT), (R, Y_EXIT + T), (0, Y_EXIT + T)]
+    return [(0, Y_EXIT), (R, Y_EXIT), (R, Y_EXIT + t), (R - w, Y_EXIT + T), (0, Y_EXIT + T)]
+
+
 def to_params(x):
     fp_t = None if x["fp_t"] >= 9.525 else x["fp_t"]
     cap_t = None if x["cap_t"] >= 9.525 else x["cap_t"]
-    return dict(front_plate_poly=front_plate(t_tip=fp_t, w=x["fp_w"]),
-                pole_cap_poly=pole_cap(r=x["cap_r"], t_tip=cap_t, w=x["cap_w"]),
-                extra_iron=[inner_screen(x["is_t"], x["is_gap"], x["is_flare"]),
-                            outer_screen(x["os_r"], x["os_t"], x["os_gap"])])
+    p = dict(front_plate_poly=front_plate(t_tip=fp_t, w=x["fp_w"], bore=x.get("fp_bore")),
+             pole_cap_poly=pole_cap(r=x["cap_r"], t_tip=cap_t, w=x["cap_w"]),
+             extra_iron=[])
+    if "cap_T" in x:
+        # pole cap thickness other than the 9.525 plate: the inner coil starts right behind it
+        p["pole_cap_poly"] = cap_poly(x["cap_r"], x["cap_T"], x["cap_t"], x["cap_w"])
+        p["pole_cap_t"] = x["cap_T"]
+    # optional keys (absent from older runs, so their cache keys are unchanged)
+    if not x.get("no_is"):
+        p["extra_iron"].append(inner_screen(x["is_t"], x["is_gap"], x["is_flare"], x.get("is_r0")))
+    if not x.get("no_os"):
+        p["extra_iron"].append(outer_screen(x["os_r"], x["os_t"], x["os_gap"]))
+    if x.get("spacer"):
+        # back plate moved L upstream. spacer_mode 1 "taller": cores, posts and coils all longer (same turns);
+        # 2 "iron spacer": cores/posts longer, coils unchanged; 3 "inert spacer": cores, posts, coils
+        # unchanged, non-magnetic gap of L between their rear ends and the back plate
+        L, mode = x["spacer"], int(x.get("spacer_mode", 1))
+        p["spacer"] = L
+        # 4 "inert spacer, inner core only": as 2, but the inner core keeps its length with a
+        # non-magnetic gap of L behind it (the outer posts are extended in iron)
+        if mode in (2, 3, 4):
+            p["icoil_y"] = (Y_FP_IN, Y_COIL_TOP)
+            p["ocoil_y"] = (Y_FP_IN, Y_COIL_TOP)
+        if mode == 3:
+            p["core_gap"] = p["ring_gap"] = L
+        if mode == 4:
+            p["core_gap"] = L
+    if x.get("core_gap"):
+        # inner core shortened at its rear end by this much, non-magnetic insert in its place;
+        # back plate and posts unchanged. coil_short: the inner coil ends at the same plane (the insert
+        # is a disc as wide as the pole cap, under both core and coil), same ampere-turns
+        p["core_gap"] = x["core_gap"]
+        if x.get("coil_short"):
+            p["icoil_y"] = (Y_FP_IN, Y_COIL_TOP - x["core_gap"])
+    if x.get("f_in", 1.0) != 1.0 or x.get("f_out", 1.0) != 1.0:
+        # coils wound over only the front fraction f of the core / posts (same turns, build grows as 1/f)
+        from shaping import coils
+        p.update(coils(f_in=x.get("f_in", 1.0), f_out=x.get("f_out", 1.0)))
+    if "n_in" in x:
+        # layered windings (fixed turns, real wire pitch), seated against the pole cap / front plate
+        y0 = Y_EXIT + x.get("cap_T", 9.525) + x.get("in_off", 0.0)      # in_off: coil not fully seated
+        li, bi = layered(int(x["n_in"]), N_TURNS_IN)
+        p["icoil_y"] = (y0, y0 + li)
+        p["icoil_ro"] = x.get("core_r", DEFAULTS["core_r"]) + bi
+    if "n_out" in x:
+        lo, bo = layered(int(x["n_out"]), N_TURNS_OUT)
+        p["ocoil_y"] = (Y_FP_IN + x.get("out_off", 0.0), Y_FP_IN + x.get("out_off", 0.0) + lo)
+        p["ocoil_build"] = bo
+    if "core_r" in x:
+        p["core_r"] = x["core_r"]
+    if "core_r" in x and "n_in" not in x:
+        # inner core radius changed: the inner winding keeps the same turns of the same wire (same window
+        # area), so its build stays B_IN0 / f_in on top of the new core
+        from shaping import B_IN0
+        p["icoil_ro"] = x["core_r"] + B_IN0 / x.get("f_in", 1.0)
+    if x.get("split_g"):
+        # non-magnetic insert of thickness split_g cutting the inner core (and the pole cap if it reaches
+        # it), centred split_z mm upstream of the pole cap back face; radius split_r (default core radius)
+        yc = Y_FP_IN + x["split_z"]
+        rr = x.get("split_r", DEFAULTS["core_r"])
+        g = x["split_g"]
+        p["air_cut"] = [[(0, yc - g / 2), (rr, yc - g / 2), (rr, yc + g / 2), (0, yc + g / 2)]]
+    if x.get("ring_gap"):
+        # outer posts shortened at their rear end by this much (non-magnetic in its place)
+        p["ring_gap"] = x["ring_gap"]
+    if x.get("no_bp"):
+        p["back_plate"] = False
+    if "mu" in x:
+        p["mu_r"] = x["mu"]
+    if "mu_screen" in x:
+        p["mu_screen"] = x["mu_screen"]
+    return p
 
 
 def key(x):
@@ -126,14 +222,18 @@ def parts(x):
     """Labelled iron parts, in the geometry's priority order (first wins)."""
     p = to_params(x)
     r0, r1, _ = ring_geometry(DEFAULTS)
-    return [("inner core", [(0, Y_EXIT), (DEFAULTS["core_r"], Y_EXIT), (DEFAULTS["core_r"], Y_COIL_TOP),
-                            (0, Y_COIL_TOP)]),
+    yb = Y_COIL_TOP + p.get("spacer", 0.0)                 # back plate inner face
+    ye = yb - p.get("core_gap", 0.0)                        # rear end of the inner core
+    yr = yb - p.get("ring_gap", 0.0)                        # rear end of the outer posts
+    rc = p.get("core_r", DEFAULTS["core_r"])
+    return [("inner core", [(0, Y_EXIT), (rc, Y_EXIT), (rc, ye), (0, ye)]),
             ("pole cap", p["pole_cap_poly"]),
             ("front plate", p["front_plate_poly"]),
-            ("back plate", [(0, Y_COIL_TOP), (200, Y_COIL_TOP), (200, Y_COIL_TOP + 9.525), (0, Y_COIL_TOP + 9.525)]),
-            ("inner screen", p["extra_iron"][0]),
-            ("outer screen", p["extra_iron"][1]),
-            ("outer posts", [(r0, Y_FP_IN), (r1, Y_FP_IN), (r1, Y_COIL_TOP), (r0, Y_COIL_TOP)])]
+            ("back plate", [(0, yb), (200, yb), (200, yb + 9.525), (0, yb + 9.525)]),
+            *([("inner screen", inner_screen(x["is_t"], x["is_gap"], x["is_flare"], x.get("is_r0")))]
+              if not x.get("no_is") else []),
+            *([("outer screen", outer_screen(x["os_r"], x["os_t"], x["os_gap"]))] if not x.get("no_os") else []),
+            ("outer posts", [(r0, Y_FP_IN), (r1, Y_FP_IN), (r1, yr), (r0, yr)])]
 
 
 # --------------------------------------------------------------------------
@@ -149,7 +249,10 @@ def _elem_weights(run_dir):
     xy = np.zeros((int(tags.max()) + 1, 2))
     xy[tags] = coords.reshape(-1, 3)[:, :2] * 1e3
     cents, vols = [], []
-    for reg in (R_IRON, R_RING):
+    groups = {t for d, t in gmsh.model.getPhysicalGroups(2)}
+    for reg in (R_IRON, R_RING, R_SCREEN):
+        if reg not in groups:          # R_SCREEN exists only when the screens get their own mu
+            continue
         for ent in gmsh.model.getEntitiesForPhysicalGroup(2, reg):
             types, _, nodes = gmsh.model.mesh.getElements(2, ent)
             for t, nd in zip(types, nodes):
@@ -236,9 +339,9 @@ def iron_metrics(x, res, ni_in, ni_out):
             out[f"{s}_sat"] = p95 / KNEE_T
         if nm == "inner core":
             # flux-mean B_y along the shaft under the coil (exact in 2-D axisym)
-            sel = m & (pts[:, 1] > Y_FP_IN) & (pts[:, 1] < Y_COIL_TOP)
+            sel = m & (pts[:, 1] > Y_FP_IN) & (pts[:, 1] < Y_COIL_TOP + x.get("spacer", 0.0))
             yb = np.round(pts[sel, 1])
-            A = np.pi * DEFAULTS["core_r"] ** 2
+            A = np.pi * x.get("core_r", DEFAULTS["core_r"]) ** 2
             phi = np.array([np.sum(B[sel][yb == yy, 1] * v[sel][yb == yy]) for yy in np.unique(yb)])
             out["inner_core_Bflux_max_T"] = float(np.max(np.abs(phi)) / A)
             out[f"{s}_sat"] = max(p95, out["inner_core_Bflux_max_T"]) / KNEE_T

@@ -39,6 +39,7 @@ of each coil are parameters too (see DEFAULTS); layout() returns every shape
 as a polygon, which the figures use to draw the geometry.
 """
 import math
+import os
 from pathlib import Path
 
 import gmsh
@@ -52,6 +53,22 @@ Y_COIL_TOP = 12.954        # back plate inner face
 PLATE_T = 9.525
 
 CHANNEL = dict(r_in=22.120, r_out=31.600, y_anode=-4.826, y_exit=Y_EXIT)
+
+# Configuration, selected with the AXISYM_CONFIG environment variable (default "base" = the frozen STEP).
+#   "bn": boron nitride channel part of 2026-10-20 (drawing Boron_Nitride_Channel, inches). Body
+#   OD 3.5 x 1.506 below a 3.0 x .375 lip that sits in the front plate bore (front plate rests on the
+#   shoulder, so the bore becomes 3.0 and the lip is flush with the exit plane); 1.395 centre bore
+#   limits the pole cap; outer wall .512 -> channel outer radius 1.238 in; channel inner radius NOT
+#   dimensioned (kept at 22.12, assumption); bottom 6.35 mm of the channel filled, so the anode face
+#   is 6.35 mm above the part's back face: channel length 47.78 - 6.35 = 41.43 mm. Outer posts at
+#   2.5 in from the axis (user, 2026-10-21).
+CONFIG = os.environ.get("AXISYM_CONFIG", "base")
+IN = 25.4
+if CONFIG == "bn":
+    BN = dict(od=3.5 * IN, lip_od=3.0 * IN, lip_t=0.375 * IN, body_t=1.506 * IN, bore=1.395 * IN,
+              fill=6.35)
+    CHANNEL = dict(r_in=22.120, r_out=(1.75 - 0.512) * IN,
+                   y_anode=Y_EXIT + BN["lip_t"] + BN["body_t"] - BN["fill"], y_exit=Y_EXIT)
 
 DEFAULTS = dict(
     mu_r=1500.0,
@@ -71,10 +88,13 @@ DEFAULTS = dict(
     back_plate=True,
     trim=None,                # trim coil window (r0, r1, y0, y1) mm, own excitation NI_TRIM
     extra_iron=[],            # list of [(r, y), ...] polygons, mm
+    air_cut=[],               # polygons forced to air (non-magnetic inserts); highest priority
+    mu_screen=None,           # if set, extra_iron gets its own region with this mu_r
     pole_cap_poly=None,       # replaces the pole cap rectangle if given
     front_plate_poly=None,    # replaces the front plate rectangle if given
     fp_t=PLATE_T,             # front plate thickness (exit face fixed, inner face moves)
     bp_t=PLATE_T,             # back plate thickness (inner face fixed)
+    spacer=0.0,               # back plate moved this far upstream (longer cores/posts; see optimise.to_params)
     core_gap=0.0,             # air gap between the inner core's rear end and the back plate
     ring_gap=0.0,             # air gap between the outer posts' rear ends and the back plate
     icoil_y=None,             # inner coil axial window (y0, y1) mm; default fills the core
@@ -85,8 +105,11 @@ DEFAULTS = dict(
     h_far=25.0,
 )
 
+if CONFIG == "bn":
+    DEFAULTS.update(ring_R=2.5 * IN, fp_bore_r=BN["lip_od"] / 2, pole_cap_r=17.6)
+
 # Region ids shared with axisym.pro
-R_AIR, R_IRON, R_WIN, R_WOI, R_WOO, R_RING, R_TRIM = 1, 2, 3, 4, 5, 6, 7
+R_AIR, R_IRON, R_WIN, R_WOI, R_WOO, R_RING, R_TRIM, R_SCREEN = 1, 2, 3, 4, 5, 6, 7, 8
 R_BND = 10
 
 
@@ -114,7 +137,7 @@ def layout(p):
     geometry on field maps."""
     p = dict(DEFAULTS, **p)
     y_fp = Y_EXIT + p["fp_t"]                       # front plate inner face
-    y_bp = Y_COIL_TOP                                # back plate inner face
+    y_bp = Y_COIL_TOP + p["spacer"]                  # back plate inner face
     ring_r0, ring_r1, _ = ring_geometry(p)
     oc0, oc1 = p["ring_R"] - p["ocore_r"], p["ring_R"] + p["ocore_r"]
     b = p["ocoil_build"]
@@ -129,7 +152,7 @@ def layout(p):
         out.append((R_IRON, p["front_plate_poly"] or rect(p["fp_bore_r"], p["plate_r"], Y_EXIT, y_fp)))
     if p["plates"] and p["back_plate"]:
         out.append((R_IRON, rect(p["bp_hole_r"], p["plate_r"], y_bp, y_bp + p["bp_t"])))
-    out += [(R_IRON, poly) for poly in p["extra_iron"]]
+    out += [(R_SCREEN if p["mu_screen"] else R_IRON, poly) for poly in p["extra_iron"]]
     out.append((R_RING, rect(ring_r0, ring_r1, y_fp, y_bp - p["ring_gap"])))
     iy0, iy1 = p["icoil_y"] or (Y_EXIT + p["pole_cap_t"], y_bp)
     out.append((R_WIN, rect(p["core_r"], p["icoil_ro"], iy0, iy1)))
@@ -139,7 +162,7 @@ def layout(p):
     if p["trim"]:
         r0, r1, y0, y1 = p["trim"]
         out.append((R_TRIM, rect(r0, r1, y0, y1)))
-    return out
+    return [(R_AIR, poly) for poly in p["air_cut"]] + out
 
 
 def build(p, out_dir):
@@ -197,15 +220,15 @@ def build(p, out_dir):
     f.setNumber(box, "XMin", 0.0)
     f.setNumber(box, "XMax", 45 * MM)
     f.setNumber(box, "YMin", (Y_EXIT - 30) * MM)
-    f.setNumber(box, "YMax", 0.0)
+    f.setNumber(box, "YMax", (0.0 if CHANNEL["y_anode"] + 3 <= 0 else CHANNEL["y_anode"] + 6) * MM)
     f.setNumber(box, "Thickness", 60 * MM)
     fields = [box]
     gaps = []
     if p["core_gap"] > 0:
-        gaps.append((0.0, p["core_r"], Y_COIL_TOP - p["core_gap"], p["core_gap"]))
+        gaps.append((0.0, p["core_r"], Y_COIL_TOP + p["spacer"] - p["core_gap"], p["core_gap"]))
     if p["ring_gap"] > 0:
         r0, r1, _ = ring_geometry(p)
-        gaps.append((r0, r1, Y_COIL_TOP - p["ring_gap"], p["ring_gap"]))
+        gaps.append((r0, r1, Y_COIL_TOP + p["spacer"] - p["ring_gap"], p["ring_gap"]))
     for r0, r1, y0, g in gaps:            # resolve thin rear air gaps
         bg = f.add("Box")
         f.setNumber(bg, "VIn", min(0.3, g / 2) * MM)
@@ -222,7 +245,7 @@ def build(p, out_dir):
     f.setNumber(box2, "XMin", 0.0)
     f.setNumber(box2, "XMax", (p["plate_r"] + 5) * MM)
     f.setNumber(box2, "YMin", (Y_EXIT - 40) * MM)
-    f.setNumber(box2, "YMax", (Y_COIL_TOP + p["bp_t"] + 5) * MM)
+    f.setNumber(box2, "YMax", (Y_COIL_TOP + p["spacer"] + p["bp_t"] + 5) * MM)
     f.setNumber(box2, "Thickness", 80 * MM)
     mn = f.add("Min")
     f.setNumbers(mn, "FieldsList", fields + [box2])
@@ -246,8 +269,13 @@ def build(p, out_dir):
         f"  Air = Region[{R_AIR}]; Iron = Region[{R_IRON}]; Ring = Region[{R_RING}];\n"
         f"  WInner = Region[{R_WIN}]; WOutIn = Region[{R_WOI}]; WOutOut = Region[{R_WOO}];\n"
         f"  WTrim = Region[{R_TRIM}]; Bnd = Region[{R_BND}];\n"
+        f"  Screen = Region[{{{R_SCREEN if p['mu_screen'] else ''}}}];\n"
         "}\n"
         f"A_WIN = {derived['A_win']!r};\nA_WOI = {derived['A_woi']!r};\nA_WOO = {derived['A_woo']!r};\n"
         f"A_TRM = {derived['A_trim']!r};\n"
-        f"MUR_IRON = {p['mu_r']!r};\nMUR_RING = {ring_mu!r};\n")
+        f"MUR_IRON = {p['mu_r']!r};\nMUR_RING = {ring_mu!r};\n"
+        f"MUR_SCREEN = {(p['mu_screen'] or p['mu_r'])!r};\n"
+        f"CH_R0 = {CHANNEL['r_in'] * MM!r};\nCH_R1 = {CHANNEL['r_out'] * MM!r};\n"
+        f"CH_DR = {(CHANNEL['r_out'] - CHANNEL['r_in']) / 10 * MM!r};\n"
+        f"CH_Y0 = {(Y_EXIT - 30) * MM!r};\nCH_Y1 = {(CHANNEL['y_anode'] + 3) * MM!r};\n")
     return derived
