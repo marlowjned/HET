@@ -20,6 +20,13 @@ python run.py --quick             # without the chamber-size and mesh-convergenc
 | `run.py` | solves, superposition check, figures, `out/fields_rz.npz`, `out/summary.json` |
 | `fields.py` | reads `fields_rz.npz` and returns any case by superposition |
 | `verify_spheres.py` | exact-solution check of `estatic.pro` |
+| `mesh_3d.py`, `run_3d.py` | the 3-D model: square plates, four posts with coils, a placeholder cathode. Three per-volt bases, the floating iron, and the potential on two planes (`out/3d/`, about 15 min) |
+
+**3-D result** (`python run_3d.py`):
+- iron floating at 184.8 V with the placeholder cathode at 0 V (2-D gives 192.2 V with the same 0.5 m chamber);
+- 171.5 V with the cathode 20 V below the chamber wall.
+
+Details in [`../REPORT.md`](../REPORT.md).
 
 ## Method
 

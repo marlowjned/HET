@@ -9,7 +9,7 @@ and can be moved into it later. Assumptions, placeholders and issues: [`REPORT.m
 | `geometry/design_b.py` | Design B r-z geometry shared by all models (values from the het library), plus placeholders for the anode and cathode | done |
 | `estatics/` | vacuum E-field at 300 V (gmsh + GetDP): floating or grounded iron, superposition bases, grid export | done, verified against an exact solution |
 | `magnetics/` | Design B B-field at the 165 G design point (gmsh + GetDP), openPMD map for WarpX | done, matches the het parity case to 0.03 % |
-| `pic2d/` | 2-D axisymmetric PIC-MCC discharge model (WarpX): argon, 2 mg/s, 300 V | runs; first example in `pic2d/runs/example` |
+| `pic2d/` | 2-D PIC-MCC discharge model (WarpX, planar x-z): argon, 2 mg/s, 300 V | runs end to end; the discharge is not yet self-sustaining (REPORT.md) |
 
 ## Environment (WSL, no sudo)
 
@@ -27,5 +27,5 @@ The PIC model also needs the argon cross sections from
 ```bash
 cd pic/estatics && python run.py                 # 40 s
 cd pic/magnetics && python run_mag.py            # 15 s; writes the B map the PIC reads
-cd pic/pic2d && python het2d.py --t-end 10e-6 --tag example && python analyse.py runs/example
+cd pic/pic2d && python het2d.py --tag example && python analyse.py runs/example     # 6 us, about 20 min
 ```

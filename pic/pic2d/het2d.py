@@ -21,7 +21,7 @@ Every placeholder and assumption is listed in ../REPORT.md.
 
     source ../activate.sh
     python het2d.py --steps 2000 --tag smoke        # smoke test
-    python het2d.py --t-end 10e-6 --tag example     # the example run (background, ~1-2 h on 16 threads)
+    python het2d.py --tag example                   # the example run: 6 us, about 20 min on 12 threads
     python analyse.py runs/example                   # figures and summary
 """
 import argparse
@@ -54,7 +54,7 @@ def parse():
     a("--geometry", choices=["xz", "rz"], default="xz",
       help="xz: planar slab (x = r); rz: axisymmetric (wrong in WarpX 26.10 for r_lo > 0, see REPORT I5)")
     a("--steps", type=int, default=None, help="number of steps (overrides --t-end)")
-    a("--t-end", type=float, default=10e-6, help="simulated time [s]")
+    a("--t-end", type=float, default=6e-6, help="simulated time [s]")
     a("--dt", type=float, default=5e-11, help="time step [s]")
     a("--cell", type=float, default=0.3e-3, help="target cell size [m]")
     a("--gamma2", type=float, default=400.0, help="vacuum permittivity scaling factor")
@@ -83,7 +83,7 @@ def parse():
            "LANDMARK benchmark's wall-free domain); cutoff = ions absorbed, electrons reflected below --wall-cut-ev "
            "of wall-normal energy; absorb = both absorbed")
     a("--wall-cut-ev", type=float, default=50.0, help="electron wall-normal energy cutoff for --walls cutoff [eV]")
-    a("--alpha-in", type=float, default=1 / 160, help="anomalous collision frequency / omega_ce in the channel")
+    a("--alpha-in", type=float, default=1 / 64, help="anomalous collision frequency / omega_ce in the channel")
     a("--alpha-out", type=float, default=1 / 16, help="anomalous collision frequency / omega_ce in the plume")
     a("--threads", type=int, default=12, help="OpenMP threads (12 physical cores here; 24 was slower)")
     a("--diag-every", type=float, default=0.25e-6, help="field output interval [s]")

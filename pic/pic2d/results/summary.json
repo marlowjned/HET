@@ -1,0 +1,22 @@
+{
+  "t_end_us": 6.0,
+  "avg_window_us": 1.5,
+  "field_outputs_averaged": 7,
+  "stop_reason": "completed",
+  "ms_per_step": 9.588743182023368,
+  "Te_peak_eV": 8.50644427900398,
+  "Te_peak_z_mm": -19.255144583333326,
+  "ion_vz_at_cathode_plane_km_s": 11.289179495478823,
+  "discharge_current_A": 0.3164470646582559,
+  "beam_current_A": 0.1445776087694018,
+  "discharge_power_W": 94.93411939747676,
+  "current_utilisation": 0.45687770536135974,
+  "mass_utilisation": 0.02992986698611785,
+  "ion_wall_current_A": 0.0,
+  "peak_ne_m3": 1.8278288157345466e+17,
+  "peak_ne_z_mm": 19.137082916666667,
+  "phi_exit_V": 17.327032632831184,
+  "thrust_mN_estimate": 0.6757672813641804,
+  "isp_s_estimate": 34.45454265035361,
+  "anode_efficiency_estimate": 0.0012025745365856126
+}
