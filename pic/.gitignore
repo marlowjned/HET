@@ -1,0 +1,14 @@
+__pycache__/
+estatics/out/work/
+estatics/out/verify_spheres/
+*.npz
+*.msh
+*.pre
+*.res
+*.pos
+pic2d/runs/
+pic2d/diags/
+pic2d/*/diags/
+warpx_used_inputs
+*.h5
+*.bp
