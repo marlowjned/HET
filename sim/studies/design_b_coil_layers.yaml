@@ -1,0 +1,13 @@
+description: "Design B: how far forward to wind the coils (turns per layer), at 165 G (the legacy bn_noshield coil study)"
+design: het:assemblies/design_b
+pipeline: het:pipelines/magnetostatics_2d
+measure: het:measurements/target_fit
+variables:
+  in_per_layer:  {param: parts.inner_coil.per_layer, values: [23, 26, 29, 33, 38, 46]}
+  out_per_layer: {param: parts.outer_coils.per_layer, values: [17, 21, 26, 31, 37, 46]}
+normalize:
+  scale: [op.circuits.inner.current, op.circuits.outer.current]
+  so_that: {value: shape.peak_Br, equals: 165}
+objectives: {misfit: {minimize: misfit.rms_pct}, power: {minimize: power.total}}
+constraints: {saturation: {value: sat.worst, max: 0.8}}
+sampler: {kind: grid}
