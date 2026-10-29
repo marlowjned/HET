@@ -6,7 +6,7 @@ params:
 parts:
   pole_cap:
     type: het:part_types/pole_cap_flat
-    params: {radius: 17.6, thickness: 9.525, edge_length: 2.5, chamfer_width: 6.5, material: het:materials/iron_legacy}
+    params: {radius: 17.6, thickness: 9.525, edge_length: 2.5, chamfer_width: 6.5, material: "${ params.iron }"}
   inner_screen:
     type: het:part_types/screen
     at: "${ params.front_plate_inner_z - params.inner_screen_gap }"
@@ -15,7 +15,7 @@ parts:
       r_inner: 15.05
       thickness: 2.413
       length: "${ params.front_plate_inner_z - params.inner_screen_gap - params.back_plate_inner_z }"
-      material: het:materials/iron_legacy
+      material: "${ params.iron }"
   outer_screen:
     type: het:part_types/screen
     at: "${ params.front_plate_inner_z - params.outer_screen_gap }"
@@ -24,7 +24,7 @@ parts:
       r_inner: 44.45
       thickness: 3.175
       length: "${ params.front_plate_inner_z - params.outer_screen_gap - params.back_plate_inner_z }"
-      material: het:materials/iron_legacy
+      material: "${ params.iron }"
 checks:
   screen_clearance:
     metric: std:metrics/clearance

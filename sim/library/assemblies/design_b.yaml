@@ -3,7 +3,7 @@ description: "Design B: shieldless, coils wound forward (results/bn_noshield/bes
 parts:
   pole_cap:
     type: het:part_types/pole_cap_flat
-    params: {radius: 17.6, thickness: 9.525, edge_length: 1.5, chamfer_width: 6.0, material: het:materials/iron_legacy}
+    params: {radius: 17.6, thickness: 9.525, edge_length: 1.5, chamfer_width: 6.0, material: "${ params.iron }"}
   inner_coil:
     params: {build: null, length: null, per_layer: 29}      # layered: 8 layers of 29 turns
   outer_coils:

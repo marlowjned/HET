@@ -1,0 +1,12 @@
+description: "Design A sensitivity to the iron permeability (the legacy permeability study)"
+design: het:assemblies/design_a
+pipeline: het:pipelines/magnetostatics_2d
+measure: het:measurements/target_fit
+variables:
+  iron: {param: params.iron, choices: [het:materials/iron_legacy_mu200, het:materials/iron_legacy_mu500,
+                                       het:materials/iron_legacy, het:materials/iron_legacy_mu5000]}
+normalize:
+  scale: [op.circuits.inner.current, op.circuits.outer.current]
+  so_that: {value: shape.peak_Br, equals: 165}
+objectives: {misfit: {minimize: misfit.rms_pct}}
+sampler: {kind: grid}

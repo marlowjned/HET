@@ -1,0 +1,4 @@
+extends: het:materials/iron_legacy
+description: "Legacy iron with mu_r 5000 (permeability sensitivity)"
+properties:
+  mu_r: 5000

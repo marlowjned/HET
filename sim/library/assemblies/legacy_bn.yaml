@@ -4,23 +4,24 @@ params:
   front_plate_inner_z: "${ -parts.front_plate.thickness }"
   cap_back_z: "${ -parts.pole_cap.thickness if parts.pole_cap else 0 }"
   q: 0.635                     # outer A-turns per coil / inner A-turns (legacy Q_SPEC)
+  iron: het:materials/iron_legacy   # every iron part; a study can swap it
 parts:
   channel:     {use: het:parts/bn_channel_v2, at: 0}
-  front_plate: {use: het:parts/plate_6in_a36, at: 0, params: {material: het:materials/iron_legacy}}
+  front_plate: {use: het:parts/plate_6in_a36, at: 0, params: {material: "${ params.iron }"}}
   back_plate:  {use: het:parts/plate_6in_a36, at: "${ params.back_plate_inner_z }",
-                params: {bore_radius: 3.4, material: het:materials/iron_legacy}}
+                params: {bore_radius: 3.4, material: "${ params.iron }"}}
   pole_cap:
     type: het:part_types/pole_cap_flat
     at: 0
     optional: true
-    params: {radius: 17.6, thickness: 9.525, material: het:materials/iron_legacy}
+    params: {radius: 17.6, thickness: 9.525, material: "${ params.iron }"}
   inner_core:
     type: het:part_types/core
     at: "${ params.cap_back_z }"
     params:
       radius: 9.525
       length: "${ params.cap_back_z - params.back_plate_inner_z }"
-      material: het:materials/iron_legacy
+      material: "${ params.iron }"
   inner_coil:
     use: het:parts/solenoid_230t_awg20
     at: "${ params.cap_back_z }"
@@ -33,7 +34,7 @@ parts:
       ring_radius: 63.5
       post_radius: 9.525
       length: "${ params.front_plate_inner_z - params.back_plate_inner_z }"
-      material: het:materials/iron_legacy
+      material: "${ params.iron }"
   outer_coils:
     use: het:parts/post_coils_184t_awg20
     at: "${ params.front_plate_inner_z }"
