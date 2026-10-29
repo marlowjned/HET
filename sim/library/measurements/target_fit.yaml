@@ -1,0 +1,5 @@
+extends: het:measurements/channel_field_2d
+description: "Channel field + misfit to the 2026-10-21 half-Gaussian target"
+metrics:
+  misfit: {metric: std:metrics/profile_misfit, inputs: {profile: profile},
+           with: {reference: het:references/half_gaussian_exit, component: B_r}}

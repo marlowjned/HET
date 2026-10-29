@@ -1,0 +1,12 @@
+type: het:part_types/channel_insulator
+description: "Boron nitride channel part, drawing Boron_Nitride_Channel (2026-10-20); values as in BN_REPORT.md"
+params:
+  r_in: 22.12             # assumed; not dimensioned on the drawing
+  r_out: 31.4452          # (1.75 - 0.512) in
+  depth: 41.4274          # 0.375 + 1.506 in, minus the 6.35 mm filled floor
+  bore_radius: 17.7165    # 1.395 in / 2
+  lip_radius: 38.1
+  lip_length: 9.525
+  body_radius: 44.45
+  total_length: 47.7774
+  material: het:materials/bn

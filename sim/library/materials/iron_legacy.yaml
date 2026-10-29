@@ -1,0 +1,6 @@
+description: "The legacy 2-D model's iron: linear mu_r 1500 for every iron part, 1.5 T knee (A36 proxy)"
+sources: ["gmsh_getdp/axisym/geometry.py DEFAULTS mu_r", "gmsh_getdp/axisym/optimise.py KNEE_T"]
+properties:
+  mu_r: 1500
+  saturation_knee: 1.5 T
+  density: 7850 kg/m^3

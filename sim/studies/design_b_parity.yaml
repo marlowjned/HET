@@ -1,0 +1,9 @@
+description: "Design B at 165 G: parity with the legacy 2-D code"
+design: het:assemblies/design_b
+pipeline: het:pipelines/magnetostatics_2d
+measure: het:measurements/target_fit
+normalize:
+  scale: [op.circuits.inner.current, op.circuits.outer.current]
+  so_that: {value: shape.peak_Br, equals: 165}
+objectives: {misfit: {minimize: misfit.rms_pct}}
+sampler: {kind: list, rows: [{}]}

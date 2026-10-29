@@ -1,0 +1,31 @@
+extends: het:assemblies/legacy_bn
+description: "Design A: screened, stock DOM tubes against the BN part (BN_REPORT.md; results/bn/search_stock_stock.json)"
+params:
+  inner_screen_gap: 18 mm
+  outer_screen_gap: 21.25 mm
+parts:
+  pole_cap:
+    type: het:part_types/pole_cap_flat
+    params: {radius: 17.6, thickness: 9.525, edge_length: 2.5, chamfer_width: 6.5, material: het:materials/iron_legacy}
+  inner_screen:
+    type: het:part_types/screen
+    at: "${ params.front_plate_inner_z - params.inner_screen_gap }"
+    optional: true
+    params:
+      r_inner: 15.05
+      thickness: 2.413
+      length: "${ params.front_plate_inner_z - params.inner_screen_gap - params.back_plate_inner_z }"
+      material: het:materials/iron_legacy
+  outer_screen:
+    type: het:part_types/screen
+    at: "${ params.front_plate_inner_z - params.outer_screen_gap }"
+    optional: true
+    params:
+      r_inner: 44.45
+      thickness: 3.175
+      length: "${ params.front_plate_inner_z - params.outer_screen_gap - params.back_plate_inner_z }"
+      material: het:materials/iron_legacy
+checks:
+  screen_clearance:
+    metric: std:metrics/clearance
+    with: {pairs: [[inner_screen, channel, 0.1], [inner_screen, inner_coil, 0.4], [outer_screen, outer_coils, 0.4]]}

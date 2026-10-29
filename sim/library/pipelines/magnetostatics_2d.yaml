@@ -1,0 +1,15 @@
+description: "Linear axisymmetric magnetostatics (GetDP), mesh as in the legacy BN model"
+stages:
+  mag:
+    backend: getdp_axisym ^1.0
+    fidelity:
+      nonlinear: false
+      mesh: {h_fine: 0.35, h_iron: 1.2, h_far: 25, fine_r_max: 45, fine_z_min: -47.4274, fine_z_max: 30}
+      air_radius: 400
+      air_center_z: -27.846
+    equivalence:
+      outer_posts: smeared_ring
+      outer_coils: winding_sheets
+      front_plate: equal_area_disc
+      back_plate:  equal_area_disc
+    resources: {cores: 1, memory: 1 GB, runtime_hint: 15 s}
