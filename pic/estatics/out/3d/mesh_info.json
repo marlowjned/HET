@@ -1,0 +1,8 @@
+{
+  "tetrahedra": 1546474,
+  "nodes": 275742,
+  "chamber_r_mm": 500.0,
+  "h_channel_mm": 1.5,
+  "h_gap_mm": 0.12,
+  "edge_surfaces": 1
+}

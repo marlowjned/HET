@@ -15,7 +15,8 @@ DefineConstant[
   V_iron = 0.0,          // [V]
   Q_iron = 0.0,          // [C]
   Has_cathode = 0,       // 3-D only: a cathode conductor (tag 14)
-  V_cathode = 0.0
+  V_cathode = 0.0,
+  P0x = 0, P0y = 0, P0z = 0, P1x = 1, P1y = 0, P1z = 0, P2x = 0, P2y = 0, P2z = 1, N1 = 10, N2 = 10  // Plane output
 ];
 
 // GetDP's axisymmetric Jacobian integrates per radian: global charges and energies are scaled by 2 pi below,
@@ -164,6 +165,25 @@ PostOperation {
         Print[ V, OnRegion Cathode, File "V_cathode.txt", Format Table ];
       EndIf
       Print[ energy[Vol_Ele], OnGlobal, File "energy.txt", Format Table ];
+    }
+  }
+  { Name Globals; NameOfPostProcessing ES;  // conductor charges and potentials only (3-D: no volume export)
+    Operation {
+      Print[ Q, OnRegion Anode, File "Q_anode.txt", Format Table ];
+      Print[ V, OnRegion Anode, File "V_anode.txt", Format Table ];
+      Print[ Q, OnRegion Iron, File "Q_iron.txt", Format Table ];
+      Print[ V, OnRegion Iron, File "V_iron.txt", Format Table ];
+      Print[ Q, OnRegion Chamber, File "Q_chamber.txt", Format Table ];
+      If (Has_cathode)
+        Print[ Q, OnRegion Cathode, File "Q_cathode.txt", Format Table ];
+        Print[ V, OnRegion Cathode, File "V_cathode.txt", Format Table ];
+      EndIf
+    }
+  }
+  { Name Plane; NameOfPostProcessing ES;    // potential on a regular grid in a plane (origin P0, corners P1, P2)
+    Operation {
+      Print[ v, OnPlane { {P0x, P0y, P0z} {P1x, P1y, P1z} {P2x, P2y, P2z} } {N1, N2},
+             File "plane.txt", Format SimpleTable ];
     }
   }
   { Name Maps; NameOfPostProcessing ES;     // for viewing in Gmsh

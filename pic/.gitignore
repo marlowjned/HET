@@ -12,3 +12,6 @@ pic2d/*/diags/
 warpx_used_inputs
 *.h5
 *.bp
+magnetics/out/work/
+estatics/out/3d/*/
+pic2d/runs_*.log

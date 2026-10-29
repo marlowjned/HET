@@ -1,0 +1,50 @@
+{
+  "mesh": {
+    "tetrahedra": 1546474,
+    "nodes": 275742,
+    "chamber_r_mm": 500.0,
+    "h_channel_mm": 1.5,
+    "h_gap_mm": 0.12,
+    "edge_surfaces": 1
+  },
+  "capacitance_pF": [
+    [
+      17.79903,
+      -17.79067,
+      -0.00117
+    ],
+    [
+      -17.79067,
+      28.8872,
+      -1.32288
+    ],
+    [
+      -0.00117,
+      -1.32288,
+      2.00918
+    ]
+  ],
+  "order": [
+    "anode",
+    "iron",
+    "cathode"
+  ],
+  "reciprocity_rel": 0.0,
+  "k_float": 0.615866898226003,
+  "V_iron_floating": 184.76006946780092,
+  "V_iron_floating_direct": 184.7600694678046,
+  "case_cathode_minus20": {
+    "V_anode": 280.0,
+    "V_cathode": -20.0,
+    "V_iron_floating": 171.52684005274577
+  },
+  "solve_times_s": {
+    "anode": 47.66695165634155,
+    "iron": 47.343666315078735,
+    "cathode": 47.305156230926514,
+    "floating": 47.398404359817505,
+    "plane_0": 280.2916820049286,
+    "plane_45": 337.2235686779022
+  },
+  "runtime_s": 814.8
+}
