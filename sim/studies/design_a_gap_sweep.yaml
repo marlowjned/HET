@@ -1,0 +1,12 @@
+description: "Design A: inner-screen tip gap sweep at 165 G (the legacy sigma-family study)"
+design: het:assemblies/design_a
+pipeline: het:pipelines/magnetostatics_2d
+measure: het:measurements/target_fit
+variables:
+  is_gap: {param: params.inner_screen_gap, values: [12, 15, 18, 21, 24, 27]}
+normalize:
+  scale: [op.circuits.inner.current, op.circuits.outer.current]
+  so_that: {value: shape.peak_Br, equals: 165}
+objectives: {misfit: {minimize: misfit.rms_pct}}
+constraints: {saturation: {value: sat.worst, max: 0.8}}
+sampler: {kind: grid}
