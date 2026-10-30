@@ -1,0 +1,19 @@
+{
+  "source": "fitted to HallThruster.jl krypton rate tables (Dragnea 2020 ionization and elastic, Bordage 2013 excitation) by xs/make_kr.py",
+  "electron": {
+    "elastic": [
+      "elastic.dat",
+      null
+    ],
+    "excitation1": [
+      "excitation.dat",
+      9.99
+    ],
+    "ionization": [
+      "ionization.dat",
+      13.9996055
+    ]
+  },
+  "ion": {},
+  "ion_note": "no ion-neutral collisions: HallThruster.jl has none, and the PIC is compared with it"
+}

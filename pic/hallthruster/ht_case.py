@@ -45,7 +45,8 @@ def build(args, out):
             "discharge_voltage": args.voltage,
             "domain": [0.0, args.domain],
             "anom_model": {"type": "TwoZoneBohm", "c1": args.c1, "c2": args.c2},
-            "wall_loss_model": {"type": "WallSheath", "material": "BoronNitride", "loss_scale": args.wall_scale},
+            "wall_loss_model": ({"type": "WallSheath", "material": "BoronNitride", "loss_scale": args.wall_scale}
+                                if args.wall_scale > 0 else {"type": "NoWallLosses"}),
         },
         "simulation": {"dt": 5e-9, "adaptive": True, "grid": {"type": "EvenGrid", "num_cells": args.cells},
                        "duration": args.duration, "num_save": args.num_save},
@@ -83,7 +84,7 @@ if __name__ == "__main__":
     a("--t-neutral", type=float, default=600.0)
     a("--domain", type=float, default=0.08)
     a("--cells", type=int, default=200)
-    a("--wall-scale", type=float, default=1.0)
+    a("--wall-scale", type=float, default=1.0, help="BN wall-sheath loss scale; 0 = no wall losses (as the PIC)")
     a("--duration", type=float, default=1e-3)
     a("--num-save", type=int, default=2000)
     a("--average-start", type=float, default=None)

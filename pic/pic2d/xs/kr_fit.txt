@@ -1,0 +1,14 @@
+Method check on xenon (HallThruster.jl tables vs the measured set in warpx-data):
+  process        measured set vs table      fit vs table   fitted / measured cross section
+  ionization  max   6.7%, rms   4.1%   max  1.5%, rms  0.7%   20 eV 1.07, 50 eV 1.04, 100 eV 0.91, 300 eV 0.95
+  excitation  max  81.0%, rms  75.2%   max 13.8%, rms  4.7%   10 eV 2.64, 20 eV 4.82, 50 eV 4.85, 100 eV 3.24
+  elastic     max  40.4%, rms  32.4%   max  0.3%, rms  0.1%   1 eV 1.25, 5 eV 0.97, 10 eV 1.11, 50 eV 2.12
+
+Krypton fits (Maxwellian rate error over Te 2-80 eV; HallThruster.jl tables):
+  ionization  max  4.4%, rms  1.3%; peak 3.415e-20 m^2 at 63.8 eV; sigma = 1.006e-19 (x - 1)^1.604 / x^2.054, x = E / 13.9996 eV
+  excitation  max 15.3%, rms  4.7%; peak 1.505e-20 m^2 at 35.5 eV; piecewise linear in log E
+  elastic     max  0.7%, rms  0.1%; peak 3.084e-19 m^2 at 10.0 eV; piecewise linear in log E
+
+Plausibility: krypton should sit between argon and xenon (warpx-data measured sets):
+  ionization: 30 eV: Ar 1.80e-20, Kr 2.60e-20, Xe 3.93e-20; 70 eV: Ar 2.77e-20, Kr 3.41e-20, Xe 5.28e-20; 100 eV: Ar 2.81e-20, Kr 3.26e-20, Xe 5.53e-20; 200 eV: Ar 2.40e-20, Kr 2.70e-20, Xe 4.71e-20
+  elastic: 2 eV: Ar 3.83e-20, Kr 3.44e-20, Xe 1.01e-19; 5 eV: Ar 9.54e-20, Kr 2.16e-19, Xe 3.50e-19; 10 eV: Ar 1.97e-19, Kr 3.08e-19, Xe 3.82e-19; 20 eV: Ar 1.91e-19, Kr 2.42e-19, Xe 2.33e-19; 50 eV: Ar 8.14e-20, Kr 1.51e-19, Xe 6.75e-20

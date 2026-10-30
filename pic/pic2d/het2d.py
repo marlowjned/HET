@@ -132,8 +132,10 @@ def subst(expr, consts):
 
 
 def write_anomalous_xs(path, k_anom):
-    """sigma(E) = k / v(E): the collision frequency n sigma v = n k is the same for every electron energy."""
-    e = np.concatenate([np.geomspace(1e-3, 1.0, 400, endpoint=False), np.linspace(1.0, 5000.0, 5000)])
+    """sigma(E) = k / v(E): the collision frequency n sigma v = n k is the same for every electron energy.
+    Evenly spaced, 0.05 eV: WarpX scans every table at its smallest energy step in particle precision (get_nu_max),
+    and in single precision (the GPU build) a step below half a float spacing never reaches the end of the scan."""
+    e = 0.05 * np.arange(1, 100001)
     v = np.sqrt(2 * e * Q_E / M_E)
     np.savetxt(path, np.column_stack([e, k_anom / v]), fmt="%.8e")
 
