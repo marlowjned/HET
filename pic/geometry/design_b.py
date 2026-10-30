@@ -9,9 +9,11 @@ and these models share one geometry. Items marked PLACEHOLDER are not on any dra
 """
 from math import ceil, pi, sqrt
 
-# BN channel part (bn_channel_v2)
-R_IN = 22.12             # channel inner radius (assumed in BN_REPORT; not dimensioned on the drawing)
-R_OUT = 31.4452          # channel outer radius
+# BN channel part (bn_channel_v2), channel radii at the 2026-10-29 set point ("Changes To: Thruster" slide:
+# r_in 0.0205 m, r_out 0.0335 m, width 13 mm; krypton, 3.0 mg/s, 300 V, 3.53 A). Was 22.12 / 31.4452 mm.
+# PLACEHOLDER: the rest of the BN part (bore, lip, body, depth) is kept from bn_channel_v2 until the new drawing.
+R_IN = 20.5              # channel inner radius
+R_OUT = 33.5             # channel outer radius
 DEPTH = 41.4274          # exit plane to anode face
 BORE_R = 17.7165         # bore radius (the pole cap sits in the bore)
 LIP_R, LIP_LEN = 38.1, 9.525

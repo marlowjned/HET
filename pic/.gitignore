@@ -15,3 +15,5 @@ warpx_used_inputs
 magnetics/out/work/
 estatics/out/3d/*/
 pic2d/runs_*.log
+hallthruster/runs/
+hallthruster/Manifest.toml

@@ -246,6 +246,17 @@ def main():
     i_pk = np.argmax(np.abs(prof))
     np.savez_compressed(OUT / "bfield_rz.npz", r=r, z=z, Br=br.astype(np.float32), Bz=bz.astype(np.float32),
                         I_inner=i_inner, I_outer=i_outer)
+    # 1-D field profile for HallThruster.jl: channel-averaged B_r (r-weighted, 11 radii) and |B| at mid-radius,
+    # from the anode face to 100 mm downstream of the exit; z measured from the anode face, as HallThruster.jl does
+    z1 = np.arange(-g.DEPTH, 100.0 + 1e-9, 0.5) * 1e-3
+    rr = np.linspace(g.R_IN, g.R_OUT, 11) * 1e-3
+    Z1, R1 = np.meshgrid(z1, rr)
+    br1, _ = s(R1, Z1)
+    prof1 = (br1 * rr[:, None]).sum(0) / rr.sum()
+    bm1 = np.hypot(*s(np.full_like(z1, rm), z1))
+    np.savetxt(OUT / "bfield_profile_1d.csv",
+               np.column_stack([z1 + g.DEPTH * 1e-3, z1, np.abs(prof1), bm1]), delimiter=",", fmt="%.6e",
+               header="z_from_anode_m,z_m,Br_channel_avg_T,Bmag_mid_radius_T", comments="")
     summary = {"B_peak_T": B_PEAK, "q": Q, "I_inner_A": i_inner, "I_outer_A": i_outer, "mu_r_iron": MU_IRON,
                "mu_r_posts": MU_POSTS, "profile_peak_z_mm": float(zp[i_pk] * 1e3), "profile_sign": float(sign),
                "B_r_at_exit_pct": float(100 * np.interp(0.0, zp, prof) / prof[i_pk]),
